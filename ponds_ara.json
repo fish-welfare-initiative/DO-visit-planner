@@ -1,0 +1,20 @@
+[
+  {
+    "id": 839,
+    "code": "WG-VMS1",
+    "farmer_id": 48,
+    "farmer_name": "Vamsi",
+    "village": "Sreeparru",
+    "property_area_in_acres": 17.0,
+    "pond_area_in_acres": 13.2,
+    "depth_in_meters": 3.0,
+    "lifecycle": "grow_out",
+    "tenure": "owned",
+    "feed_types": [
+      "pelleted_floating",
+      "mash"
+    ],
+    "feed_brand_or_name": "Godavari edible oils",
+    "google_maps_location": "16.633081362880034, 81.14941392159376"
+  }
+]
