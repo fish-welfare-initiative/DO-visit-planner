@@ -113,6 +113,30 @@
   .table-filter { padding: 5px 10px; border: 1px solid var(--border); border-radius: 4px; font-size: 0.85rem; width: 200px; margin-bottom: 10px; }
   .empty-state { text-align: center; padding: 40px; color: var(--muted); font-size: 0.9rem; }
 
+  /* Zone strip */
+  .zone-strip { margin-top: 12px; }
+  .zone-strip-label { font-size: 0.73rem; opacity: 0.6; margin-bottom: 5px; text-align: left; }
+  .zone-pill-wrap { display: inline-block; margin: 2px; vertical-align: top; }
+  .zone-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 12px; font-size: 0.78rem;
+    cursor: pointer; border: 1px solid transparent; user-select: none;
+    transition: opacity 0.15s;
+  }
+  .zone-pill:hover { opacity: 0.8; }
+  .zone-pill.low    { background: var(--green-bg);  color: var(--green);  border-color: var(--green); }
+  .zone-pill.moderate { background: var(--yellow-bg); color: #997404; border-color: var(--yellow); }
+  .zone-pill.high   { background: var(--orange-bg); color: var(--orange); border-color: var(--orange); }
+  .zone-pill.critical { background: var(--red-bg); color: var(--red);  border-color: var(--red); }
+  .zone-pill .arrow { font-size: 0.65rem; transition: transform 0.15s; }
+  .zone-pill.open .arrow { transform: rotate(180deg); }
+  .zone-detail {
+    display: none; text-align: left; font-size: 0.78rem;
+    margin-top: 3px; padding: 6px 10px;
+    background: rgba(0,0,0,0.06); border-radius: 6px; line-height: 1.6;
+  }
+  .zone-detail.open { display: block; }
+
   /* Responsive */
   @media (max-width: 600px) {
     .settings-row { grid-template-columns: 1fr; }
@@ -137,6 +161,10 @@
     <div class="risk-label" id="riskLabel">Loading...</div>
     <div class="risk-details" id="riskDetails"></div>
     <div class="risk-advice" id="riskAdvice"></div>
+    <div class="zone-strip" id="zoneStrip" style="display:none">
+      <div class="zone-strip-label">Other zones:</div>
+      <div id="zoneStripPills"></div>
+    </div>
   </div>
 
   <!-- Weather card -->
@@ -357,22 +385,37 @@ try { const s = localStorage.getItem('fwi_visit_log'); if (s) visitLog = JSON.pa
 function saveLog() { try { localStorage.setItem('fwi_visit_log', JSON.stringify(visitLog)); } catch(e) {} }
 
 // =====================================================================
-// WEATHER FETCHING
+// WEATHER FETCHING — one call per zone (6 grid cells)
 // =====================================================================
-const ELURU_LAT = 16.57, ELURU_LON = 81.03;
+const ZONES = [
+  { key: 'z1', name: 'Jalipudi & surrounds', lat: 16.65, lon: 81.15, ponds: 97,
+    villages: 'Jalipudi, Sreeparru, Durgapuram, Jayampuram, Maanuru, Ponangi, Chataparru, Madepalli' },
+  { key: 'z2', name: 'Koniki & Gogunta', lat: 16.55, lon: 81.05, ponds: 25,
+    villages: 'Koniki, Gogunta' },
+  { key: 'z3', name: 'Veeramma Kunta area', lat: 16.65, lon: 81.05, ponds: 24,
+    villages: 'Veeramma Kunta, Pathamupparu, Gogunta, Mupparu, Ponangi' },
+  { key: 'z4', name: 'Gudivakalanka', lat: 16.65, lon: 81.25, ponds: 10,
+    villages: 'Gudivakalanka, Kokkirailanka' },
+  { key: 'z5', name: 'Chataparru North', lat: 16.75, lon: 81.15, ponds: 4,
+    villages: 'Chataparru' },
+  { key: 'z6', name: 'Gogunta West', lat: 16.55, lon: 80.95, ponds: 2,
+    villages: 'Gogunta' },
+];
 
-async function fetchWeather(dates) {
-  // Single API call: forecast endpoint with past_days=3 covers the 3-day rolling
-  // window for today AND all future dates. No need for the slow historical API.
-  const params = `latitude=${ELURU_LAT}&longitude=${ELURU_LON}&hourly=temperature_2m,relative_humidity_2m,cloud_cover,wind_speed_10m,shortwave_radiation,precipitation,sunshine_duration,weather_code&timezone=Asia/Kolkata&past_days=3&forecast_days=10`;
+const WX_VARS = 'temperature_2m,relative_humidity_2m,cloud_cover,wind_speed_10m,shortwave_radiation,precipitation,sunshine_duration,weather_code';
 
-  let hourlyData = {};
-  const resp = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
-  if (!resp.ok) throw new Error(`Weather API returned ${resp.status}`);
-  const data = await resp.json();
-  if (data.hourly) mergeHourly(hourlyData, data.hourly);
-  if (Object.keys(hourlyData).length === 0) throw new Error('No weather data returned');
-  return hourlyData;
+async function fetchWeather() {
+  // Fetch all 6 zones in parallel — each is one Open-Meteo API call
+  const results = await Promise.all(ZONES.map(async zone => {
+    const params = `latitude=${zone.lat}&longitude=${zone.lon}&hourly=${WX_VARS}&timezone=Asia/Kolkata&past_days=3&forecast_days=10`;
+    const resp = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
+    if (!resp.ok) throw new Error(`Weather API ${resp.status} for zone ${zone.name}`);
+    const data = await resp.json();
+    let hourlyData = {};
+    if (data.hourly) mergeHourly(hourlyData, data.hourly);
+    return { zone, hourlyData };
+  }));
+  return results;
 }
 
 function mergeHourly(target, source) {
@@ -651,9 +694,10 @@ function haversine(lat1, lon1, lat2, lon2) {
 // =====================================================================
 // UI RENDERING
 // =====================================================================
-let weatherCache = {};
+let weatherCache = {}; // weatherCache[zoneKey][date]
 let selectedDate = new Date().toISOString().slice(0, 10);
-let dayRisks = {};
+let zoneRisks = {};   // zoneRisks[date] = [{zone, wf, risk}, ...] sorted worst first
+const RISK_SEVERITY = { critical: 4, high: 3, moderate: 2, low: 1 };
 
 function formatDate(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
@@ -668,30 +712,72 @@ function renderDaySelector(dates) {
   const el = document.getElementById('daySelector');
   const dotColors = {low:'var(--green)',moderate:'var(--yellow)',high:'var(--orange)',critical:'var(--red)'};
   el.innerHTML = dates.map(d => {
-    const r = dayRisks[d];
-    const dc = r ? dotColors[r.color] : '#ccc';
-    return `<button class="day-btn ${d===selectedDate?'active':''}" data-date="${d}"><span class="risk-dot" style="background:${dc}"></span>${formatDate(d)}</button>`;
+    const zrl = zoneRisks[d];
+    const worstColor = zrl && zrl[0]?.risk ? dotColors[zrl[0].risk.color] : '#ccc';
+    return `<button class="day-btn ${d===selectedDate?'active':''}" data-date="${d}"><span class="risk-dot" style="background:${worstColor}"></span>${formatDate(d)}</button>`;
   }).join('');
   el.querySelectorAll('.day-btn').forEach(btn => {
     btn.addEventListener('click', () => { selectedDate = btn.dataset.date; renderAll(); });
   });
 }
 
-function renderRiskBanner(dayRisk, wf) {
-  const banner = document.getElementById('riskBanner');
-  banner.className = `risk-banner ${dayRisk.color}`;
-  document.getElementById('riskLabel').textContent = `${dayRisk.level} RISK`;
-  document.getElementById('riskDetails').textContent = `Predicted DO: ${dayRisk.predictedDO.toFixed(2)} mg/L (OOR threshold: 3.0 mg/L)`;
-  document.getElementById('riskAdvice').textContent = dayRisk.advice;
+function renderRiskBanner(zoneRiskList) {
+  if (!zoneRiskList || zoneRiskList.length === 0) return;
 
+  const worstColor = zoneRiskList[0].risk.color;
+  const topZones   = zoneRiskList.filter(z => z.risk.color === worstColor);
+  const otherZones = zoneRiskList.filter(z => z.risk.color !== worstColor);
+
+  // Main banner
+  document.getElementById('riskBanner').className = `risk-banner ${worstColor}`;
+  document.getElementById('riskLabel').textContent = `${topZones[0].risk.level} RISK`;
+  document.getElementById('riskDetails').innerHTML = topZones.map(z =>
+    `<span>${z.zone.name}: <strong>${z.risk.predictedDO.toFixed(2)} mg/L</strong> · ${z.zone.ponds} ponds</span>`
+  ).join('&emsp;');
+  document.getElementById('riskAdvice').textContent = topZones[0].risk.advice;
+
+  // Other zones strip
+  const strip = document.getElementById('zoneStrip');
+  const pills = document.getElementById('zoneStripPills');
+  if (otherZones.length > 0) {
+    strip.style.display = 'block';
+    pills.innerHTML = otherZones.map(z => `
+      <div class="zone-pill-wrap">
+        <div class="zone-pill ${z.risk.color}" data-zone="${z.zone.key}">
+          ${z.zone.name} — ${z.risk.level} · ${z.risk.predictedDO.toFixed(2)} mg/L · ${z.zone.ponds}p
+          <span class="arrow">▾</span>
+        </div>
+        <div class="zone-detail" id="zd-${z.zone.key}">
+          <strong>Villages:</strong> ${z.zone.villages}<br>
+          <strong>Predicted DO:</strong> ${z.risk.predictedDO.toFixed(2)} mg/L &nbsp;|&nbsp;
+          <strong>Temp:</strong> ${z.wf.t2m_3d.toFixed(1)}°C &nbsp;|&nbsp;
+          <strong>Humidity:</strong> ${z.wf.rh_3d.toFixed(0)}% &nbsp;|&nbsp;
+          <strong>Sunshine:</strong> ${(z.wf.sunshine_3d_sum_s/3600).toFixed(1)} hrs (3d)
+        </div>
+      </div>`).join('');
+
+    pills.querySelectorAll('.zone-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        pill.classList.toggle('open');
+        document.getElementById(`zd-${pill.dataset.zone}`).classList.toggle('open');
+      });
+    });
+  } else {
+    strip.style.display = 'none';
+  }
+
+  // Weather card — show highest-risk zone's weather
+  const topWf = topZones[0].wf;
+  const topZoneName = topZones.length === 1 ? topZones[0].zone.name : `${topZones.length} zones`;
   document.getElementById('weatherCard').style.display = 'block';
+  document.getElementById('weatherCard').querySelector('h3').textContent = `Weather Summary — ${topZoneName} (3-day rolling)`;
   document.getElementById('weatherGrid').innerHTML = [
-    {val: wf.t2m_3d.toFixed(1)+'°C', lbl:'Temperature (3d avg)'},
-    {val: wf.rh_3d.toFixed(0)+'%', lbl:'Humidity (3d avg)'},
-    {val: wf.cloud_3d.toFixed(0)+'%', lbl:'Cloud Cover (3d avg)'},
-    {val: wf.ws10_3d.toFixed(1)+' m/s', lbl:'Wind Speed (3d avg)'},
-    {val: wf.precip_3d_sum.toFixed(1)+' mm', lbl:'Precipitation (3d total)'},
-    {val: (wf.sunshine_3d_sum_s/3600).toFixed(1)+' hrs', lbl:'Sunshine (3d total)'},
+    {val: topWf.t2m_3d.toFixed(1)+'°C',              lbl:'Temperature (3d avg)'},
+    {val: topWf.rh_3d.toFixed(0)+'%',                lbl:'Humidity (3d avg)'},
+    {val: topWf.cloud_3d.toFixed(0)+'%',             lbl:'Cloud Cover (3d avg)'},
+    {val: topWf.ws10_3d.toFixed(1)+' m/s',           lbl:'Wind Speed (3d avg)'},
+    {val: topWf.precip_3d_sum.toFixed(1)+' mm',      lbl:'Precipitation (3d total)'},
+    {val: (topWf.sunshine_3d_sum_s/3600).toFixed(1)+' hrs', lbl:'Sunshine (3d total)'},
   ].map(i => `<div class="weather-item"><div class="val">${i.val}</div><div class="lbl">${i.lbl}</div></div>`).join('');
 }
 
@@ -789,17 +875,17 @@ function renderAll() {
   const dates = getDates();
   renderDaySelector(dates);
 
-  const wf = weatherCache[selectedDate];
-  const dayRisk = dayRisks[selectedDate];
-  if (!wf || !dayRisk) return;
+  const zoneRiskList = zoneRisks[selectedDate];
+  if (!zoneRiskList || zoneRiskList.length === 0) return;
+  const worstRisk = zoneRiskList[0].risk;
 
-  renderRiskBanner(dayRisk, wf);
+  renderRiskBanner(zoneRiskList);
 
   const scored = computePondScores(PONDS, selectedDate);
   renderAllPonds(scored);
 
   const numStaff = parseInt(document.getElementById('staffCount')?.value || '3');
-  const isHighRisk = dayRisk.color === 'high' || dayRisk.color === 'critical';
+  const isHighRisk = worstRisk.color === 'high' || worstRisk.color === 'critical';
   const vpNormal = parseInt(document.getElementById('visitsNormal')?.value || '4');
   const vpHigh = parseInt(document.getElementById('visitsHigh')?.value || '6');
   const visitsPerStaff = isHighRisk ? vpHigh : vpNormal;
@@ -808,7 +894,7 @@ function renderAll() {
   const clusters = clusterPondsForStaff(scored, numStaff, visitsPerStaff, minRevisit, selectedDate);
   const totalVisits = clusters.reduce((s,c) => s + c.length, 0);
   document.getElementById('planTitle').textContent = `${formatDate(selectedDate)} — ${totalVisits} visits planned`;
-  renderStaffAssignments(clusters, dayRisk);
+  renderStaffAssignments(clusters, worstRisk);
   renderVisitLog();
 }
 
@@ -826,7 +912,7 @@ function getDates() {
 // =====================================================================
 async function init() {
   document.getElementById('riskLabel').textContent = 'Loading weather data...';
-  document.getElementById('riskDetails').textContent = 'Fetching forecast from Open-Meteo...';
+  document.getElementById('riskDetails').textContent = 'Fetching forecast from Open-Meteo (6 zones)...';
 
   // Load pond data
   try {
@@ -844,10 +930,19 @@ async function init() {
   selectedDate = dates[0];
 
   try {
-    const hourlyData = await fetchWeather(dates);
+    const zoneWeatherResults = await fetchWeather();
+    for (const { zone, hourlyData } of zoneWeatherResults) {
+      weatherCache[zone.key] = {};
+      for (const date of dates) {
+        const wf = computeWeatherFeatures(hourlyData, date);
+        if (wf) weatherCache[zone.key][date] = wf;
+      }
+    }
     for (const date of dates) {
-      const wf = computeWeatherFeatures(hourlyData, date);
-      if (wf) { weatherCache[date] = wf; dayRisks[date] = computeDayRisk(wf); }
+      zoneRisks[date] = ZONES.map(zone => {
+        const wf = weatherCache[zone.key]?.[date];
+        return wf ? { zone, wf, risk: computeDayRisk(wf) } : null;
+      }).filter(Boolean).sort((a, b) => RISK_SEVERITY[b.risk.color] - RISK_SEVERITY[a.risk.color]);
     }
   } catch(e) {
     console.error('Weather fetch error:', e);
