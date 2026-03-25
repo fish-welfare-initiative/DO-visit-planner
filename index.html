@@ -72,8 +72,10 @@
   .settings-panel { display: none; padding: 12px; background: var(--bg); border-radius: 6px; margin-bottom: 12px; }
   .settings-panel.open { display: block; }
   .settings-panel label { display: block; font-size: 0.8rem; margin-bottom: 2px; color: var(--muted); }
-  .settings-panel input, .settings-panel select { width: 100%; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 0.85rem; margin-bottom: 8px; }
+  .settings-panel input, .settings-panel select { width: 100%; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 0.85rem; margin-bottom: 4px; }
   .settings-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .settings-section-label { font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 10px 0 4px; border-top: 1px solid var(--border); padding-top: 8px; }
+  .slider-val { font-size: 0.78rem; color: var(--accent); font-weight: 600; margin-bottom: 6px; }
 
   /* Visit log */
   .log-entry { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
@@ -206,34 +208,55 @@
         <span class="settings-toggle" id="settingsToggle">Settings</span>
       </div>
       <div class="settings-panel" id="settingsPanel">
+
+        <div class="settings-section-label">Capacity</div>
         <div class="settings-row">
           <div>
             <label>Staff count</label>
             <input type="number" id="staffCount" value="3" min="1" max="10">
           </div>
           <div>
-            <label>Visits per staff (normal)</label>
+            <label>Visits per staff (normal days)</label>
             <input type="number" id="visitsNormal" value="4" min="1" max="15">
           </div>
           <div>
-            <label>Visits per staff (high risk)</label>
+            <label>Visits per staff (high-risk days)</label>
             <input type="number" id="visitsHigh" value="6" min="1" max="15">
           </div>
         </div>
-        <div class="settings-row" style="margin-top:4px">
+
+        <div class="settings-section-label">Pond Priority Scoring</div>
+        <div class="settings-row">
           <div>
             <label>Min days between revisits</label>
             <input type="number" id="revisitDays" value="5" min="1" max="30">
           </div>
           <div>
             <label>Vulnerability weight</label>
+            <div class="slider-val"><span id="wVulnVal">35</span></div>
             <input type="range" id="wVuln" value="35" min="0" max="100">
           </div>
           <div>
             <label>Recency weight</label>
+            <div class="slider-val"><span id="wRecencyVal">35</span></div>
             <input type="range" id="wRecency" value="35" min="0" max="100">
           </div>
         </div>
+
+        <div class="settings-section-label">Route Clustering</div>
+        <div class="settings-row">
+          <div>
+            <label>Distance weight <span style="font-weight:400;font-size:0.75rem">(spread seeds geographically)</span></label>
+            <div class="slider-val"><span id="wDistVal">70</span></div>
+            <input type="range" id="wDist" value="70" min="0" max="100">
+          </div>
+          <div>
+            <label>Priority weight <span style="font-weight:400;font-size:0.75rem">(keep seeds high-priority)</span></label>
+            <div class="slider-val"><span id="wPriorityVal">30</span></div>
+            <input type="range" id="wPriority" value="30" min="0" max="100">
+          </div>
+        </div>
+
       </div>
 
       <!-- Staff assignments -->
@@ -665,8 +688,10 @@ function clusterPondsForStaff(rankedPonds, numStaff, visitsPerStaff, minRevisitD
     let bestIdx = -1, bestScore = -1;
     for (let i = 0; i < candidates.length; i++) {
       if (used.has(candidates[i].id)) continue;
+      const wDist     = parseInt(document.getElementById('wDist')?.value     || '70') / 100;
+      const wPriority = parseInt(document.getElementById('wPriority')?.value || '30') / 100;
       const minDist = Math.min(...seeds.map(s => haversine(s.lat, s.lon, candidates[i].lat, candidates[i].lon)));
-      const score = minDist * 0.7 + (1 - i / candidates.length) * 5 * 0.3;
+      const score = minDist * wDist + (1 - i / candidates.length) * 5 * wPriority;
       if (score > bestScore) { bestScore = score; bestIdx = i; }
     }
     if (bestIdx >= 0) { seeds.push(candidates[bestIdx]); used.add(candidates[bestIdx].id); }
@@ -979,10 +1004,18 @@ async function init() {
   renderAll();
 
   // Settings listeners
-  ['staffCount','visitsNormal','visitsHigh','revisitDays','wVuln','wRecency'].forEach(id => {
+  ['staffCount','visitsNormal','visitsHigh','revisitDays','wVuln','wRecency','wDist','wPriority'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', renderAll);
     document.getElementById(id)?.addEventListener('input', () => {
       if (document.getElementById(id).type === 'range') renderAll();
+    });
+  });
+  // Live slider value display
+  const sliderDisplayMap = { wVuln: 'wVulnVal', wRecency: 'wRecencyVal', wDist: 'wDistVal', wPriority: 'wPriorityVal' };
+  Object.entries(sliderDisplayMap).forEach(([sliderId, spanId]) => {
+    document.getElementById(sliderId)?.addEventListener('input', e => {
+      const span = document.getElementById(spanId);
+      if (span) span.textContent = e.target.value;
     });
   });
   document.getElementById('settingsToggle').addEventListener('click', () => {
