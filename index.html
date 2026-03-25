@@ -113,6 +113,19 @@
   .table-filter { padding: 5px 10px; border: 1px solid var(--border); border-radius: 4px; font-size: 0.85rem; width: 200px; margin-bottom: 10px; }
   .empty-state { text-align: center; padding: 40px; color: var(--muted); font-size: 0.9rem; }
 
+  /* Week grid */
+  .week-grid-wrap { overflow-x: auto; }
+  .week-grid { width: 100%; border-collapse: collapse; font-size: 0.82rem; table-layout: fixed; }
+  .week-grid th { padding: 8px 10px; border: 1px solid var(--border); background: var(--bg); text-align: center; font-size: 0.83rem; min-width: 150px; line-height: 1.4; }
+  .week-grid td { padding: 8px 10px; border: 1px solid var(--border); vertical-align: top; }
+  .week-grid .staff-col { width: 80px; font-weight: 600; background: var(--bg); position: sticky; left: 0; z-index: 1; text-align: left; }
+  .week-cell.empty-cell { color: var(--muted); text-align: center; vertical-align: middle; font-size: 0.8rem; }
+  .week-pond { padding: 3px 0; border-bottom: 1px dotted var(--border); line-height: 1.3; }
+  .week-pond:last-child { border-bottom: none; }
+  .week-pond-id { font-weight: 600; font-size: 0.78rem; }
+  .week-pond-farmer { font-size: 0.73rem; color: var(--muted); display: block; }
+  .week-total { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+
   /* Zone strip */
   .zone-strip { margin-top: 12px; }
   .zone-strip-label { font-size: 0.73rem; opacity: 0.6; margin-bottom: 5px; text-align: left; }
@@ -176,6 +189,7 @@
   <!-- Main tabs -->
   <div class="main-tabs">
     <div class="main-tab active" data-tab="plan">Visit Plan</div>
+    <div class="main-tab" data-tab="weekview">Week View</div>
     <div class="main-tab" data-tab="allponds">All Ponds</div>
     <div class="main-tab" data-tab="log">Visit Log</div>
     <div class="main-tab" data-tab="ponds-table">Ponds</div>
@@ -224,6 +238,17 @@
 
       <!-- Staff assignments -->
       <div id="staffAssignments"></div>
+    </div>
+  </div>
+
+  <!-- Week View Tab -->
+  <div class="tab-content" id="tab-weekview">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+        <h2 id="weekViewTitle">Week View</h2>
+        <span style="font-size:0.8rem;color:var(--muted);">Scheduled sequentially — ponds visited earlier in the week are excluded from later days</span>
+      </div>
+      <div id="weekGridContent"><p class="loading">Loading…</p></div>
     </div>
   </div>
 
@@ -978,6 +1003,109 @@ async function init() {
 
 init();
 
+// =====================================================================
+// WEEK VIEW
+// =====================================================================
+function getWeekdayDates() {
+  // Next 5 weekdays (Mon–Fri) from today, using only dates with risk data
+  return getDates().filter(d => {
+    const dow = new Date(d + 'T12:00:00').getDay();
+    return dow >= 1 && dow <= 5;
+  });
+}
+
+function computeWeekSchedule(dates) {
+  const numStaff  = parseInt(document.getElementById('staffCount')?.value  || '3');
+  const vpNormal  = parseInt(document.getElementById('visitsNormal')?.value || '4');
+  const vpHigh    = parseInt(document.getElementById('visitsHigh')?.value   || '6');
+  const minRevisit = parseInt(document.getElementById('revisitDays')?.value || '5');
+
+  const originalLog = visitLog;
+  const simulatedLog = [...visitLog];
+  const schedule = {};
+
+  for (const date of dates) {
+    const zrl = zoneRisks[date];
+    const worstRisk = zrl?.[0]?.risk;
+    const isHighRisk = worstRisk && (worstRisk.color === 'high' || worstRisk.color === 'critical');
+    const visitsPerStaff = isHighRisk ? vpHigh : vpNormal;
+
+    // Temporarily swap visitLog so scoring uses the simulated history
+    visitLog = simulatedLog;
+    const scored = computePondScores(PONDS, date);
+    const clusters = clusterPondsForStaff(scored, numStaff, visitsPerStaff, minRevisit, date);
+    visitLog = originalLog;
+
+    schedule[date] = { clusters, risk: worstRisk };
+
+    // Mark planned ponds as visited so they're excluded from subsequent days
+    for (const cluster of clusters) {
+      for (const pond of cluster) {
+        simulatedLog.push({ pondId: pond.id, date });
+      }
+    }
+  }
+
+  return schedule;
+}
+
+function renderWeekGrid(schedule, dates) {
+  if (!dates.length) {
+    document.getElementById('weekGridContent').innerHTML = '<p class="empty-state">No weekday dates available in the current forecast window.</p>';
+    return;
+  }
+
+  const numStaff = schedule[dates[0]]?.clusters?.length || 0;
+  const names = ['Staff A','Staff B','Staff C','Staff D','Staff E'].slice(0, numStaff);
+  const dotColors = { low:'var(--green)', moderate:'var(--yellow)', high:'var(--orange)', critical:'var(--red)' };
+  const riskColors = { low:'var(--green)', moderate:'#997404', high:'var(--orange)', critical:'var(--red)' };
+
+  const headers = dates.map(d => {
+    const r = schedule[d]?.risk;
+    const dc = r ? dotColors[r.color] : '#ccc';
+    const rc = r ? riskColors[r.color] : 'var(--muted)';
+    const total = schedule[d]?.clusters?.reduce((s,c) => s + c.length, 0) || 0;
+    const dayLabel = new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
+    return `<th>
+      <span class="risk-dot" style="background:${dc};display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle;"></span>${dayLabel}
+      <br><span style="font-size:0.73rem;font-weight:400;color:${rc}">${r?.level||'—'} · ${total} visits</span>
+    </th>`;
+  }).join('');
+
+  const rows = names.map((name, si) => {
+    const cells = dates.map(d => {
+      const cluster = schedule[d]?.clusters?.[si] || [];
+      if (!cluster.length) return `<td class="week-cell empty-cell">—</td>`;
+      const ponds = cluster.map(p => `
+        <div class="week-pond">
+          <span class="week-pond-id">${p.id}</span>
+          <span class="week-pond-farmer">${p.farmer}</span>
+        </div>`).join('');
+      return `<td class="week-cell">${ponds}<div class="week-total">${cluster.length} ponds · ~${estimateRouteKm(cluster).toFixed(1)} km</div></td>`;
+    }).join('');
+    return `<tr><td class="week-grid staff-col">${name}</td>${cells}</tr>`;
+  }).join('');
+
+  document.getElementById('weekGridContent').innerHTML = `
+    <div class="week-grid-wrap">
+      <table class="week-grid">
+        <thead><tr><th class="staff-col">Staff</th>${headers}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+  // Update title
+  const first = new Date(dates[0]+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  const last  = new Date(dates[dates.length-1]+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  document.getElementById('weekViewTitle').textContent = `Week View — ${first} to ${last}`;
+}
+
+function loadWeekView() {
+  const dates = getWeekdayDates();
+  const schedule = computeWeekSchedule(dates);
+  renderWeekGrid(schedule, dates);
+}
+
 // ---- ARA Data Tables ----
 let measurementsData = [];
 
@@ -1069,11 +1197,12 @@ function filterMeasurements() {
   ));
 }
 
-// Lazy-load tables when tab is first clicked
+// Lazy-load tabs when first clicked
 const tabsLoaded = {};
 document.querySelectorAll('.main-tab').forEach(tab => {
   tab.addEventListener('click', () => {
     const t = tab.dataset.tab;
+    if (t === 'weekview') { loadWeekView(); } // always recompute (respects current settings)
     if (t === 'ponds-table' && !tabsLoaded[t]) { tabsLoaded[t] = true; loadPondsTable(); }
     if (t === 'measurements-table' && !tabsLoaded[t]) { tabsLoaded[t] = true; loadMeasurementsTable(); }
   });
