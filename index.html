@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FWI Visit Planner — Eluru ARA</title>
+<style>
+  :root {
+    --bg: #f8f9fa; --card: #fff; --border: #dee2e6;
+    --text: #212529; --muted: #6c757d; --accent: #0d6efd;
+    --green: #198754; --yellow: #ffc107; --orange: #fd7e14; --red: #dc3545;
+    --green-bg: #d1e7dd; --yellow-bg: #fff3cd; --orange-bg: #ffe5d0; --red-bg: #f8d7da;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+  .container { max-width: 960px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 16px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+  .card h2 { font-size: 1.1rem; margin-bottom: 8px; }
+  .card h3 { font-size: 0.95rem; margin-bottom: 6px; color: var(--muted); }
+
+  /* Day selector */
+  .day-selector { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .day-btn { padding: 6px 14px; border: 1px solid var(--border); border-radius: 20px; background: var(--card); cursor: pointer; font-size: 0.85rem; transition: all 0.15s; }
+  .day-btn:hover { border-color: var(--accent); }
+  .day-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .day-btn .risk-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+
+  /* Risk banner */
+  .risk-banner { border-radius: 8px; padding: 20px; margin-bottom: 16px; text-align: center; }
+  .risk-banner.low { background: var(--green-bg); border: 2px solid var(--green); }
+  .risk-banner.moderate { background: var(--yellow-bg); border: 2px solid var(--yellow); }
+  .risk-banner.high { background: var(--orange-bg); border: 2px solid var(--orange); }
+  .risk-banner.critical { background: var(--red-bg); border: 2px solid var(--red); }
+  .risk-label { font-size: 1.6rem; font-weight: 700; }
+  .risk-banner.low .risk-label { color: var(--green); }
+  .risk-banner.moderate .risk-label { color: #997404; }
+  .risk-banner.high .risk-label { color: var(--orange); }
+  .risk-banner.critical .risk-label { color: var(--red); }
+  .risk-details { font-size: 0.9rem; color: var(--text); margin-top: 6px; }
+  .risk-advice { font-size: 0.85rem; color: var(--muted); margin-top: 8px; font-style: italic; }
+
+  /* Weather summary */
+  .weather-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-top: 8px; }
+  .weather-item { text-align: center; padding: 8px; background: var(--bg); border-radius: 6px; }
+  .weather-item .val { font-size: 1.2rem; font-weight: 600; }
+  .weather-item .lbl { font-size: 0.75rem; color: var(--muted); }
+
+  /* Staff tabs */
+  .staff-tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+  .staff-tab { padding: 6px 16px; border: 1px solid var(--border); border-radius: 6px 6px 0 0; background: var(--bg); cursor: pointer; font-size: 0.85rem; border-bottom: none; }
+  .staff-tab.active { background: var(--card); font-weight: 600; }
+
+  /* Pond list */
+  .pond-row { display: flex; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--border); gap: 12px; }
+  .pond-row:last-child { border-bottom: none; }
+  .pond-row:hover { background: #f1f3f5; }
+  .pond-rank { width: 28px; height: 28px; border-radius: 50%; background: var(--bg); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; flex-shrink: 0; }
+  .pond-info { flex: 1; min-width: 0; }
+  .pond-name { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pond-meta { font-size: 0.78rem; color: var(--muted); }
+  .pond-scores { display: flex; gap: 6px; flex-shrink: 0; }
+  .pond-badge { padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+  .badge-vuln { background: #e2e3e5; color: #41464b; }
+  .badge-recency { background: #cff4fc; color: #055160; }
+  .pond-row .priority-bar { width: 60px; height: 6px; background: #e9ecef; border-radius: 3px; overflow: hidden; flex-shrink: 0; }
+  .pond-row .priority-fill { height: 100%; border-radius: 3px; }
+
+  /* Settings panel */
+  .settings-toggle { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; color: var(--muted); font-size: 0.85rem; margin-bottom: 8px; }
+  .settings-panel { display: none; padding: 12px; background: var(--bg); border-radius: 6px; margin-bottom: 12px; }
+  .settings-panel.open { display: block; }
+  .settings-panel label { display: block; font-size: 0.8rem; margin-bottom: 2px; color: var(--muted); }
+  .settings-panel input, .settings-panel select { width: 100%; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 0.85rem; margin-bottom: 8px; }
+  .settings-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+
+  /* Visit log */
+  .log-entry { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+  .log-entry:last-child { border-bottom: none; }
+  .log-pond { font-weight: 500; }
+  .log-date { color: var(--muted); }
+  .log-clear { color: var(--red); cursor: pointer; font-size: 0.8rem; text-decoration: underline; }
+
+  .loading { text-align: center; padding: 40px; color: var(--muted); }
+  .error-msg { color: var(--red); padding: 12px; background: var(--red-bg); border-radius: 6px; font-size: 0.85rem; margin-bottom: 12px; }
+
+  /* Tabs for main sections */
+  .main-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 2px solid var(--border); }
+  .main-tab { padding: 8px 18px; cursor: pointer; font-size: 0.9rem; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -2px; }
+  .main-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Methodology */
+  .method-card p { font-size: 0.85rem; margin-bottom: 6px; }
+  .method-card a { color: var(--accent); }
+  .method-section { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .method-section h3 { font-size: 0.95rem; color: var(--text); margin-bottom: 6px; }
+  .method-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin: 8px 0; }
+  .method-table th, .method-table td { padding: 5px 8px; border: 1px solid var(--border); text-align: left; }
+  .method-table th { background: var(--bg); font-weight: 600; }
+  .method-note { font-size: 0.8rem; color: var(--muted); font-style: italic; margin-top: 6px; }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    .settings-row { grid-template-columns: 1fr; }
+    .pond-scores { flex-direction: column; gap: 2px; }
+    .weather-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;">
+    <h1>FWI Eluru Visit Planner</h1>
+    <a href="https://github.com/hkingnob/fwi-do-risk-planner" target="_blank" style="font-size:0.8rem;color:var(--accent);text-decoration:none;">View on GitHub</a>
+  </div>
+  <p class="subtitle">Dissolved oxygen risk forecast &amp; pond visit prioritization</p>
+
+  <!-- Day selector -->
+  <div class="day-selector" id="daySelector"></div>
+
+  <!-- Day Risk Banner -->
+  <div id="riskBanner" class="risk-banner low">
+    <div class="risk-label" id="riskLabel">Loading...</div>
+    <div class="risk-details" id="riskDetails"></div>
+    <div class="risk-advice" id="riskAdvice"></div>
+  </div>
+
+  <!-- Weather card -->
+  <div class="card" id="weatherCard" style="display:none">
+    <h3>Weather Summary (3-day rolling)</h3>
+    <div class="weather-grid" id="weatherGrid"></div>
+  </div>
+
+  <!-- Main tabs -->
+  <div class="main-tabs">
+    <div class="main-tab active" data-tab="plan">Visit Plan</div>
+    <div class="main-tab" data-tab="allponds">All Ponds</div>
+    <div class="main-tab" data-tab="log">Visit Log</div>
+    <div class="main-tab" data-tab="method">How It Works</div>
+  </div>
+
+  <!-- Visit Plan Tab -->
+  <div class="tab-content active" id="tab-plan">
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap: wrap;">
+        <h2 id="planTitle">Today's Visit Plan</h2>
+        <span class="settings-toggle" id="settingsToggle">Settings</span>
+      </div>
+      <div class="settings-panel" id="settingsPanel">
+        <div class="settings-row">
+          <div>
+            <label>Staff count</label>
+            <input type="number" id="staffCount" value="3" min="1" max="10">
+          </div>
+          <div>
+            <label>Visits per staff (normal)</label>
+            <input type="number" id="visitsNormal" value="4" min="1" max="15">
+          </div>
+          <div>
+            <label>Visits per staff (high risk)</label>
+            <input type="number" id="visitsHigh" value="6" min="1" max="15">
+          </div>
+        </div>
+        <div class="settings-row" style="margin-top:4px">
+          <div>
+            <label>Min days between revisits</label>
+            <input type="number" id="revisitDays" value="5" min="1" max="30">
+          </div>
+          <div>
+            <label>Vulnerability weight</label>
+            <input type="range" id="wVuln" value="35" min="0" max="100">
+          </div>
+          <div>
+            <label>Recency weight</label>
+            <input type="range" id="wRecency" value="35" min="0" max="100">
+          </div>
+        </div>
+      </div>
+
+      <!-- Staff assignments -->
+      <div id="staffAssignments"></div>
+    </div>
+  </div>
+
+  <!-- All Ponds Tab -->
+  <div class="tab-content" id="tab-allponds">
+    <div class="card">
+      <h2>All Ponds — Priority Ranking</h2>
+      <p style="font-size:0.8rem;color:var(--muted);margin-bottom:8px;">Sorted by composite priority score. Vulnerability is based on stocking density, feed amount, and pond characteristics.</p>
+      <div id="allPondsList"></div>
+    </div>
+  </div>
+
+  <!-- Visit Log Tab -->
+  <div class="tab-content" id="tab-log">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h2>Visit Log</h2>
+        <span class="log-clear" id="clearLog">Clear all</span>
+      </div>
+      <p style="font-size:0.8rem;color:var(--muted);margin-bottom:8px;">Click a pond in the visit plan to log it as visited. This affects future rotation priority.</p>
+      <div id="logEntries"><p style="color:var(--muted);font-size:0.85rem;padding:12px 0;">No visits logged yet.</p></div>
+    </div>
+  </div>
+
+  <!-- How It Works Tab -->
+  <div class="tab-content" id="tab-method">
+    <div class="card method-card">
+      <h2>How It Works</h2>
+      <p style="font-size:0.85rem;color:var(--muted);margin-bottom:12px;">
+        This tool uses a two-tier system: a machine learning model predicts day-level dissolved oxygen risk from weather,
+        and a composite scoring system ranks individual ponds for visit prioritization.
+        <a href="https://github.com/hkingnob/fwi-do-risk-planner" target="_blank">Source code and data on GitHub.</a>
+      </p>
+
+      <div class="method-section">
+        <h3>Tier 1: Day Risk Level</h3>
+        <p>The daily risk banner is driven by an <strong>XGBoost regression model</strong> (5 decision trees) trained on 2024-2025 Eluru morning
+        DO measurements. The model predicts dissolved oxygen (mg/L) from weather conditions, where lower predicted DO = higher risk.</p>
+        <p><strong>Weather features (90.5% of model importance):</strong> The model uses 19 weather features from the
+        <a href="https://open-meteo.com/en/docs" target="_blank">Open-Meteo Forecast API</a>, computed for
+        Eluru coordinates (16.57°N, 81.03°E). These include 3-day rolling averages of temperature, humidity, cloud cover,
+        and wind speed, plus 3-day sums of precipitation, solar radiation, and sunshine duration, plus instantaneous
+        values at 6-8 AM (typical morning visit time).</p>
+        <p><strong>How predicted DO maps to risk levels:</strong></p>
+        <table class="method-table">
+          <tr><th>Predicted DO</th><th>Risk Level</th><th>Recommended Action</th></tr>
+          <tr><td>&ge; 3.6 mg/L</td><td style="color:var(--green);font-weight:600;">LOW</td><td>Standard schedule, 3-4 farms/staff</td></tr>
+          <tr><td>3.3 – 3.6 mg/L</td><td style="color:#997404;font-weight:600;">MODERATE</td><td>Normal schedule, prioritize vulnerable ponds</td></tr>
+          <tr><td>3.0 – 3.3 mg/L</td><td style="color:var(--orange);font-weight:600;">HIGH</td><td>Increase to 5-6 farms/staff</td></tr>
+          <tr><td>&lt; 3.0 mg/L</td><td style="color:var(--red);font-weight:600;">CRITICAL</td><td>Maximum visits, 6+ farms/staff</td></tr>
+        </table>
+        <p class="method-note">The OOR (out-of-range) threshold for dissolved oxygen is &lt; 3.0 mg/L. The model's base prediction is 3.50 mg/L,
+        adjusted up or down by weather conditions. Key risk drivers: low sunshine, high humidity, low solar radiation, and high temperature.</p>
+      </div>
+
+      <div class="method-section">
+        <h3>Tier 2: Pond Vulnerability Score</h3>
+        <p>Each pond receives a <strong>vulnerability score (0–100%)</strong> based on its farm characteristics. This is calculated independently
+        of the XGBoost model — it uses the farm data directly rather than routing it through the ML prediction.</p>
+        <p><strong>Why not use the XGBoost model for pond ranking?</strong> The 5-tree model is fundamentally a day-level predictor. Weather
+        drives 90.5% of feature importance, so all ponds get nearly identical predictions on any given day (&plusmn;0.008 mg/L). Farm features need
+        to be used directly to create meaningful pond-level differentiation.</p>
+        <p><strong>Vulnerability formula:</strong></p>
+        <table class="method-table">
+          <tr><th>Component</th><th>Weight</th><th>Logic</th></tr>
+          <tr><td>Stocking density</td><td>45%</td><td>Percentile rank among all 162 ponds. Higher density = more fish at risk from low DO.</td></tr>
+          <tr><td>Feed amount (kg)</td><td>20%</td><td>Percentile rank. Overfeeding leads to decomposition, which consumes oxygen.</td></tr>
+          <tr><td>Feed type</td><td>5–15%</td><td>Unknown feed: +15%. Other: +8%. Mash: +5%. DORB (baseline): +0%.</td></tr>
+          <tr><td>Pond depth</td><td>0–15%</td><td>Shallower ponds (&lt; 2.5m) heat faster with less DO buffer. Scales linearly.</td></tr>
+          <tr><td>Baseline</td><td>5%</td><td>Even low-risk ponds get occasional visits.</td></tr>
+        </table>
+        <p class="method-note">Current range: 21% (WG-ALS1, SD=1,534) to 66% (WG-PRK1, SD=11,765). This 45-point spread provides meaningful differentiation for visit prioritization.</p>
+      </div>
+
+      <div class="method-section">
+        <h3>Priority Score &amp; Rotation</h3>
+        <p>The final <strong>priority score</strong> that determines visit order combines vulnerability with rotation need:</p>
+        <p style="background:var(--bg);padding:8px 12px;border-radius:4px;font-family:monospace;font-size:0.85rem;margin:8px 0;">
+          Priority = (Vulnerability &times; V-weight + Recency &times; R-weight) / (V-weight + R-weight)
+        </p>
+        <p><strong>Recency score (0–1):</strong> Based on days since last visit, normalized over a 30-day window. Never visited = 1.0 (maximum priority).
+        Visited yesterday = 0.03. Visited 15 days ago = 0.5. This ensures the team rotates across all farms over time.</p>
+        <p><strong>Frequency capping:</strong> Ponds visited within the last N days (default: 5) are excluded entirely from the plan,
+        even if they have high vulnerability. This prevents the same high-risk farms from being visited every day.</p>
+        <p><strong>Adjustable weights:</strong> The vulnerability and recency weights can be tuned in Settings. Equal weights (default) balance
+        "visit risky ponds" with "visit ponds we haven't seen recently."</p>
+      </div>
+
+      <div class="method-section">
+        <h3>Geographic Clustering</h3>
+        <p>Ponds are assigned to staff members using geographic clustering for efficient routes:</p>
+        <p><strong>1. Seed selection:</strong> The highest-priority pond becomes Staff A's seed. Subsequent seeds are chosen to maximize
+        geographic spread while still being high-priority (70% distance + 30% priority weighting).</p>
+        <p><strong>2. Assignment:</strong> Remaining ponds are assigned to the nearest cluster (by centroid) with available capacity.</p>
+        <p><strong>3. Route ordering:</strong> Within each cluster, ponds are sorted by nearest-neighbor routing (greedy TSP) to minimize
+        travel distance. Estimated route distance is shown for each staff member.</p>
+        <p class="method-note">All 162 ponds are in the Eluru region (lat 16.57–16.71, lon 81.00–81.27), spanning ~15 villages over roughly 25 km.</p>
+      </div>
+
+      <div class="method-section">
+        <h3>Model Details</h3>
+        <p><strong>Algorithm:</strong> XGBoost Regressor (reg:squarederror)</p>
+        <p><strong>Hyperparameters:</strong> 5 trees, learning rate 0.10, max depth 3, subsample 0.6, L2 regularization (lambda) 5.0</p>
+        <p><strong>Training data:</strong> 2024-2025 Eluru morning DO measurements (~414 visits, excluding follow-ups)</p>
+        <p><strong>Validation:</strong> 2026 Q1 data — AUC 0.704, Top-5% lift 5.20x, Top-10% lift 3.03x</p>
+        <p><strong>Top features by importance:</strong> Sunshine duration (21%), humidity (17%), solar radiation (15%),
+        temperature (8%), wind speed (8%), precipitation (8%), feed amount (5%), stocking density (4%)</p>
+        <p><strong>Weather data:</strong> <a href="https://open-meteo.com/en/docs" target="_blank">Open-Meteo Forecast API</a> with 3 days of past data + 10-day forecast</p>
+        <p><strong>Pond data:</strong> 162 enrolled Eluru (WG) ponds from the ARA program. Currently uses a static snapshot; future versions
+        will integrate with the <a href="https://github.com/fish-welfare-initiative/ara-data" target="_blank">ARA Laravel backend</a> for live data.</p>
+        <p>For full reproduction details, see the
+        <a href="https://github.com/hkingnob/fwi-do-risk-planner" target="_blank">GitHub repository</a>.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// =====================================================================
+// DATA: XGBoost model (5 trees)
+// =====================================================================
+const MODEL = {"trees":[{"nodeid":0,"depth":0,"split":"sunshine_3d_sum_s","split_condition":121356.82,"yes":1,"no":2,"missing":2,"children":[{"nodeid":1,"depth":1,"split":"ws10_3d","split_condition":6.44027758,"yes":3,"no":4,"missing":4,"children":[{"nodeid":3,"depth":2,"split":"rh_inst","split_condition":60.5,"yes":7,"no":8,"missing":8,"children":[{"nodeid":7,"leaf":0.0086246198},{"nodeid":8,"leaf":-0.020028187}]},{"nodeid":4,"depth":2,"split":"stocking_density","split_condition":2844,"yes":9,"no":10,"missing":10,"children":[{"nodeid":9,"leaf":0.00772945955},{"nodeid":10,"leaf":0.055646129}]}]},{"nodeid":2,"depth":1,"split":"swrad_3d_sum","split_condition":70.0559998,"yes":5,"no":6,"missing":6,"children":[{"nodeid":5,"depth":2,"split":"t2m_3d","split_condition":27.7625008,"yes":11,"no":12,"missing":12,"children":[{"nodeid":11,"leaf":0.0110024093},{"nodeid":12,"leaf":-0.124064885}]},{"nodeid":6,"depth":2,"split":"feed_amount_kg","split_condition":280,"yes":13,"no":14,"missing":14,"children":[{"nodeid":13,"leaf":0.0212399345},{"nodeid":14,"leaf":-0.0154257314}]}]}]},{"nodeid":0,"depth":0,"split":"sunshine_3d_sum_s","split_condition":122905.43,"yes":1,"no":2,"missing":2,"children":[{"nodeid":1,"depth":1,"split":"ws10_3d","split_condition":6.44027758,"yes":3,"no":4,"missing":4,"children":[{"nodeid":3,"depth":2,"split":"sunshine_3d_sum_s","split_condition":120709.781,"yes":7,"no":8,"missing":8,"children":[{"nodeid":7,"leaf":0.00936555769},{"nodeid":8,"leaf":-0.0365170315}]},{"nodeid":4,"depth":2,"split":"stocking_density","split_condition":1996,"yes":9,"no":10,"missing":10,"children":[{"nodeid":9,"leaf":-0.00524155609},{"nodeid":10,"leaf":0.0512312129}]}]},{"nodeid":2,"depth":1,"split":"rh_3d","split_condition":71.6666641,"yes":5,"no":6,"missing":6,"children":[{"nodeid":5,"depth":2,"split":"stocking_density","split_condition":2588,"yes":11,"no":12,"missing":12,"children":[{"nodeid":11,"leaf":-0.0142048541},{"nodeid":12,"leaf":0.0155298067}]},{"nodeid":6,"leaf":-0.116838075}]}]},{"nodeid":0,"depth":0,"split":"sunshine_3d_sum_s","split_condition":114316.219,"yes":1,"no":2,"missing":2,"children":[{"nodeid":1,"depth":1,"split":"t2m_inst","split_condition":30.7999992,"yes":3,"no":4,"missing":4,"children":[{"nodeid":3,"depth":2,"split":"swrad_inst","split_condition":587,"yes":7,"no":8,"missing":8,"children":[{"nodeid":7,"leaf":-0.00514968857},{"nodeid":8,"leaf":0.0174149089}]},{"nodeid":4,"depth":2,"split":"feed_amount_kg","split_condition":800,"yes":9,"no":10,"missing":10,"children":[{"nodeid":9,"leaf":0.079781808},{"nodeid":10,"leaf":-0.00741529465}]}]},{"nodeid":2,"depth":1,"split":"precip_3d_sum","split_condition":0.200000003,"yes":5,"no":6,"missing":6,"children":[{"nodeid":5,"depth":2,"split":"sunshine_3d_sum_s","split_condition":122567.211,"yes":11,"no":12,"missing":12,"children":[{"nodeid":11,"leaf":0.00247432082},{"nodeid":12,"leaf":-0.0445417687}]},{"nodeid":6,"depth":2,"split":"t2m_3d","split_condition":29.0986118,"yes":13,"no":14,"missing":14,"children":[{"nodeid":13,"leaf":-0.00254657702},{"nodeid":14,"leaf":-0.0745550469}]}]}]},{"nodeid":0,"depth":0,"split":"feed_amount_kg","split_condition":600,"yes":1,"no":2,"missing":2,"children":[{"nodeid":1,"depth":1,"split":"ws10_3d","split_condition":6.44027758,"yes":3,"no":4,"missing":4,"children":[{"nodeid":3,"depth":2,"split":"weather_code_3d_mode","split_condition":2,"yes":7,"no":8,"missing":8,"children":[{"nodeid":7,"leaf":0.0188081935},{"nodeid":8,"leaf":-0.00340567413}]},{"nodeid":4,"depth":2,"split":"ws10_3d","split_condition":7.58333349,"yes":9,"no":10,"missing":10,"children":[{"nodeid":9,"leaf":0.0532077067},{"nodeid":10,"leaf":-0.0113534806}]}]},{"nodeid":2,"depth":1,"split":"precip_3d_sum","split_condition":0.200000003,"yes":5,"no":6,"missing":6,"children":[{"nodeid":5,"depth":2,"split":"stocking_density","split_condition":1755,"yes":11,"no":12,"missing":12,"children":[{"nodeid":11,"leaf":-0.0348297022},{"nodeid":12,"leaf":0.00431120908}]},{"nodeid":6,"depth":2,"split":"t2m_3d","split_condition":29.1138897,"yes":13,"no":14,"missing":14,"children":[{"nodeid":13,"leaf":0.00502079912},{"nodeid":14,"leaf":-0.0722747296}]}]}]},{"nodeid":0,"depth":0,"split":"sunshine_3d_sum_s","split_condition":121851.219,"yes":1,"no":2,"missing":2,"children":[{"nodeid":1,"depth":1,"split":"t2m_3d","split_condition":29.9916668,"yes":3,"no":4,"missing":4,"children":[{"nodeid":3,"depth":2,"split":"rh_inst","split_condition":60.5,"yes":7,"no":8,"missing":8,"children":[{"nodeid":7,"leaf":0.0079987878},{"nodeid":8,"leaf":-0.0171611775}]},{"nodeid":4,"depth":2,"split":"t2m_3d","split_condition":30.5791664,"yes":9,"no":10,"missing":10,"children":[{"nodeid":9,"leaf":-0.0577388592},{"nodeid":10,"leaf":0.00421096897}]}]},{"nodeid":2,"depth":1,"split":"rh_3d","split_condition":73.375,"yes":5,"no":6,"missing":6,"children":[{"nodeid":5,"depth":2,"split":"stocking_density","split_condition":2560,"yes":11,"no":12,"missing":12,"children":[{"nodeid":11,"leaf":0.00885812193},{"nodeid":12,"leaf":-0.0465012528}]},{"nodeid":6,"leaf":-0.118733026}]}]}],"base_score":3.497101,"features":["t2m_3d","rh_3d","cloud_3d","ws10_3d","t2m_3d_mean","rh_3d_mean","cloud_3d_mean","ws10_3d_mean","precip_3d_sum","swrad_3d_sum","sunshine_3d_sum_s","weather_code_3d_mode","t2m_inst","rh_inst","cloud_inst","ws10_inst","swrad_inst","precip_inst","sunshine_inst_s","stocking_density","feed_amount_kg","pond_area_acres","depth_m","feed_Mash","feed_Other","feed_Unknown"]};
+
+// Pond data loaded from external ponds.json
+let PONDS = [];
+
+// =====================================================================
+// VISIT LOG — persisted via localStorage
+// =====================================================================
+let visitLog = [];
+try { const s = localStorage.getItem('fwi_visit_log'); if (s) visitLog = JSON.parse(s); } catch(e) {}
+function saveLog() { try { localStorage.setItem('fwi_visit_log', JSON.stringify(visitLog)); } catch(e) {} }
+
+// =====================================================================
+// WEATHER FETCHING
+// =====================================================================
+const ELURU_LAT = 16.57, ELURU_LON = 81.03;
+
+async function fetchWeather(dates) {
+  // Single API call: forecast endpoint with past_days=3 covers the 3-day rolling
+  // window for today AND all future dates. No need for the slow historical API.
+  const params = `latitude=${ELURU_LAT}&longitude=${ELURU_LON}&hourly=temperature_2m,relative_humidity_2m,cloud_cover,wind_speed_10m,shortwave_radiation,precipitation,sunshine_duration,weather_code&timezone=Asia/Kolkata&past_days=3&forecast_days=10`;
+
+  let hourlyData = {};
+  const resp = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
+  if (!resp.ok) throw new Error(`Weather API returned ${resp.status}`);
+  const data = await resp.json();
+  if (data.hourly) mergeHourly(hourlyData, data.hourly);
+  if (Object.keys(hourlyData).length === 0) throw new Error('No weather data returned');
+  return hourlyData;
+}
+
+function mergeHourly(target, source) {
+  if (!source.time) return;
+  const keys = ['temperature_2m','relative_humidity_2m','cloud_cover','wind_speed_10m','shortwave_radiation','precipitation','sunshine_duration','weather_code'];
+  for (let i = 0; i < source.time.length; i++) {
+    const t = source.time[i];
+    if (!target[t]) target[t] = {};
+    for (const k of keys) { if (source[k] && source[k][i] != null) target[t][k] = source[k][i]; }
+  }
+}
+
+// =====================================================================
+// WEATHER FEATURE COMPUTATION
+// =====================================================================
+function computeWeatherFeatures(hourlyData, date) {
+  const window = [];
+  for (let i = -2; i <= 0; i++) {
+    const d = new Date(date + 'T12:00:00');
+    d.setDate(d.getDate() + i);
+    window.push(d.toISOString().slice(0, 10));
+  }
+  const dailies = window.map(day => {
+    const hours = [];
+    for (let h = 0; h < 24; h++) {
+      const key = `${day}T${String(h).padStart(2,'0')}:00`;
+      if (hourlyData[key]) hours.push(hourlyData[key]);
+    }
+    if (hours.length === 0) return null;
+    const mean = (arr, k) => arr.reduce((s, h) => s + (h[k] || 0), 0) / arr.length;
+    const sum = (arr, k) => arr.reduce((s, h) => s + (h[k] || 0), 0);
+    const mode = (arr, k) => {
+      const freq = {};
+      arr.forEach(h => { const v = h[k]; if (v != null) freq[v] = (freq[v]||0)+1; });
+      let best = 0, bestV = 0;
+      for (const [v, c] of Object.entries(freq)) { if (c > best) { best = c; bestV = +v; } }
+      return bestV;
+    };
+    return {
+      t2m_mean: mean(hours, 'temperature_2m'), rh_mean: mean(hours, 'relative_humidity_2m'),
+      cloud_mean: mean(hours, 'cloud_cover'), ws10_mean: mean(hours, 'wind_speed_10m'),
+      precip_sum: sum(hours, 'precipitation'),
+      swrad_sum: sum(hours, 'shortwave_radiation') * 3600 / 1e6,
+      sunshine_sum: sum(hours, 'sunshine_duration'),
+      weather_mode: mode(hours, 'weather_code')
+    };
+  }).filter(Boolean);
+  if (dailies.length === 0) return null;
+
+  const avg = (arr, k) => arr.reduce((s, d) => s + d[k], 0) / arr.length;
+  const total = (arr, k) => arr.reduce((s, d) => s + d[k], 0);
+  const weatherModes = dailies.map(d => d.weather_mode);
+  const modeFreq = {};
+  weatherModes.forEach(v => { modeFreq[v] = (modeFreq[v]||0)+1; });
+  let weatherMode3d = 0, bestFreq = 0;
+  for (const [v, c] of Object.entries(modeFreq)) { if (c > bestFreq) { bestFreq = c; weatherMode3d = +v; } }
+
+  const inst = [];
+  for (const h of [6, 7, 8]) {
+    const key = `${date}T${String(h).padStart(2,'0')}:00`;
+    if (hourlyData[key]) inst.push(hourlyData[key]);
+  }
+  const instAvg = (k) => inst.length > 0 ? inst.reduce((s, h) => s + (h[k]||0), 0) / inst.length : 0;
+
+  const t2m_3d = avg(dailies, 't2m_mean'), rh_3d = avg(dailies, 'rh_mean');
+  const cloud_3d = avg(dailies, 'cloud_mean'), ws10_3d = avg(dailies, 'ws10_mean');
+
+  return {
+    t2m_3d, rh_3d, cloud_3d, ws10_3d,
+    t2m_3d_mean: t2m_3d, rh_3d_mean: rh_3d, cloud_3d_mean: cloud_3d, ws10_3d_mean: ws10_3d,
+    precip_3d_sum: total(dailies, 'precip_sum'), swrad_3d_sum: total(dailies, 'swrad_sum'),
+    sunshine_3d_sum_s: total(dailies, 'sunshine_sum'), weather_code_3d_mode: weatherMode3d,
+    t2m_inst: instAvg('temperature_2m'), rh_inst: instAvg('relative_humidity_2m'),
+    cloud_inst: instAvg('cloud_cover'), ws10_inst: instAvg('wind_speed_10m'),
+    swrad_inst: instAvg('shortwave_radiation'), precip_inst: instAvg('precipitation'),
+    sunshine_inst_s: instAvg('sunshine_duration')
+  };
+}
+
+// =====================================================================
+// XGBOOST TREE TRAVERSAL
+// =====================================================================
+function traverseTree(tree, features) {
+  let node = tree;
+  while (node.leaf === undefined) {
+    const val = features[node.split] ?? 0;
+    const targetId = val < node.split_condition ? node.yes : node.no;
+    node = node.children.find(c => c.nodeid === targetId);
+    if (!node) return 0;
+  }
+  return node.leaf;
+}
+
+function predict(featureObj) {
+  let sum = MODEL.base_score;
+  for (const tree of MODEL.trees) sum += traverseTree(tree, featureObj);
+  return sum;
+}
+
+// =====================================================================
+// TIER 1: DAY RISK SCORE
+// Uses XGBoost to predict DO from weather.
+// The model is fundamentally a day-level model — weather drives 90% of
+// feature importance. We use median pond features for a single day score.
+// =====================================================================
+function computeDayRisk(weatherFeatures) {
+  const medianPond = {
+    stocking_density: 2966, feed_amount_kg: 600,
+    pond_area_acres: 8, depth_m: 1.5,
+    feed_Mash: 0, feed_Other: 0, feed_Unknown: 0
+  };
+  const predictedDO = predict({ ...weatherFeatures, ...medianPond });
+
+  // Map predicted DO to risk levels
+  // base_score = 3.497, model adjustments typically range -0.5 to +0.2
+  let level, color, advice, visitsPerStaff;
+  if (predictedDO >= 3.6) {
+    level = 'LOW'; color = 'low'; visitsPerStaff = 3;
+    advice = 'Weather conditions favorable. Standard schedule (3-4 farms/staff).';
+  } else if (predictedDO >= 3.3) {
+    level = 'MODERATE'; color = 'moderate'; visitsPerStaff = 4;
+    advice = 'Some DO stress possible. Normal schedule, prioritize vulnerable ponds.';
+  } else if (predictedDO >= 3.0) {
+    level = 'HIGH'; color = 'high'; visitsPerStaff = 5;
+    advice = 'Elevated OOR risk. Increase visits to 5-6 farms/staff, focus on high-vulnerability ponds.';
+  } else {
+    level = 'CRITICAL'; color = 'critical'; visitsPerStaff = 7;
+    advice = 'Strong OOR conditions predicted. Maximum visits (6+ farms/staff), all high-density ponds.';
+  }
+  return { predictedDO, level, color, advice, visitsPerStaff };
+}
+
+// =====================================================================
+// TIER 2: POND PRIORITY SCORE
+// Ranks individual ponds by vulnerability (farm characteristics) and
+// rotation need (days since last visit). This is INDEPENDENT of the
+// XGBoost model — farm data drives this tier directly.
+// =====================================================================
+function computePondScores(ponds, targetDate) {
+  const wVuln = parseInt(document.getElementById('wVuln')?.value || '35');
+  const wRecency = parseInt(document.getElementById('wRecency')?.value || '35');
+
+  // Compute vulnerability percentiles
+  const sds = ponds.map(p => p.stocking_density || 0).sort((a,b) => a-b);
+  const feeds = ponds.map(p => p.feed_amount_kg || 0).sort((a,b) => a-b);
+  const pctile = (arr, val) => { const idx = arr.filter(v => v <= val).length; return idx / arr.length; };
+
+  const scored = ponds.map(pond => {
+    // VULNERABILITY (0–1):
+    // Stocking density (primary): higher = more fish at risk from low DO
+    const sdPctile = pctile(sds, pond.stocking_density || 0);
+    // Feed: overfeeding decomposition consumes oxygen
+    const feedPctile = pctile(feeds, pond.feed_amount_kg || 0);
+    // Unknown feed type = extra risk (we can't assess)
+    const feedTypeRisk = pond.feed_Unknown ? 0.15 : (pond.feed_Other ? 0.08 : (pond.feed_Mash ? 0.05 : 0));
+    // Shallow ponds heat faster, less DO buffer
+    const depthRisk = pond.depth_m ? Math.max(0, (2.5 - pond.depth_m) / 2.5) * 0.15 : 0;
+
+    const vulnerability = Math.min(1,
+      sdPctile * 0.45 +
+      feedPctile * 0.20 +
+      feedTypeRisk +
+      depthRisk +
+      0.05 // baseline — even low-risk ponds should occasionally be visited
+    );
+
+    // RECENCY (0–1): days since last visit, normalized
+    const lastVisit = getLastVisitDate(pond.id);
+    let daysSince = null;
+    let recency = 1; // max if never visited
+    if (lastVisit) {
+      daysSince = Math.floor((new Date(targetDate + 'T12:00:00') - new Date(lastVisit + 'T12:00:00')) / 86400000);
+      recency = Math.min(1, Math.max(0, daysSince / 30));
+    }
+
+    // Deterministic jitter to break ties consistently but differently each day
+    const jitter = (hashCode(pond.id + targetDate) % 1000) / 100000;
+
+    const totalW = wVuln + wRecency;
+    const priority = totalW > 0
+      ? (vulnerability * wVuln + recency * wRecency) / totalW + jitter
+      : 0.5 + jitter;
+
+    return { ...pond, vulnerability, recency, priority, daysSince };
+  });
+
+  scored.sort((a, b) => b.priority - a.priority);
+  return scored;
+}
+
+function hashCode(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) { hash = ((hash << 5) - hash) + str.charCodeAt(i); hash |= 0; }
+  return Math.abs(hash);
+}
+
+function getLastVisitDate(pondId) {
+  const visits = visitLog.filter(v => v.pondId === pondId);
+  if (visits.length === 0) return null;
+  return visits.sort((a, b) => b.date.localeCompare(a.date))[0].date;
+}
+
+// =====================================================================
+// GEOGRAPHIC CLUSTERING
+// =====================================================================
+function clusterPondsForStaff(rankedPonds, numStaff, visitsPerStaff, minRevisitDays, targetDate) {
+  // Frequency capping: skip ponds visited within minRevisitDays
+  const eligible = rankedPonds.filter(p => {
+    if (p.daysSince === null) return true;
+    return p.daysSince >= minRevisitDays;
+  });
+
+  const totalVisits = numStaff * visitsPerStaff;
+  const candidates = eligible.slice(0, Math.min(totalVisits * 2, eligible.length));
+  if (candidates.length === 0) return Array.from({length: numStaff}, () => []);
+
+  // Seed selection: pick N well-spread high-priority ponds
+  const seeds = [candidates[0]];
+  const used = new Set([candidates[0].id]);
+
+  while (seeds.length < numStaff && seeds.length < candidates.length) {
+    let bestIdx = -1, bestScore = -1;
+    for (let i = 0; i < candidates.length; i++) {
+      if (used.has(candidates[i].id)) continue;
+      const minDist = Math.min(...seeds.map(s => haversine(s.lat, s.lon, candidates[i].lat, candidates[i].lon)));
+      const score = minDist * 0.7 + (1 - i / candidates.length) * 5 * 0.3;
+      if (score > bestScore) { bestScore = score; bestIdx = i; }
+    }
+    if (bestIdx >= 0) { seeds.push(candidates[bestIdx]); used.add(candidates[bestIdx].id); }
+    else break;
+  }
+
+  // Assign remaining to nearest cluster with capacity
+  const clusters = seeds.map(s => [s]);
+  const assigned = new Set(seeds.map(s => s.id));
+
+  for (const pond of candidates) {
+    if (assigned.has(pond.id)) continue;
+    let bestC = -1, bestD = Infinity;
+    for (let c = 0; c < clusters.length; c++) {
+      if (clusters[c].length >= visitsPerStaff) continue;
+      const centLat = clusters[c].reduce((s, p) => s + p.lat, 0) / clusters[c].length;
+      const centLon = clusters[c].reduce((s, p) => s + p.lon, 0) / clusters[c].length;
+      const d = haversine(centLat, centLon, pond.lat, pond.lon);
+      if (d < bestD) { bestD = d; bestC = c; }
+    }
+    if (bestC >= 0) clusters[bestC].push(pond);
+  }
+
+  // Sort each cluster by nearest-neighbor route
+  return clusters.map(cluster => {
+    if (cluster.length <= 1) return cluster;
+    const route = [cluster[0]];
+    const remaining = new Set(cluster.slice(1).map(p => p.id));
+    const byId = Object.fromEntries(cluster.map(p => [p.id, p]));
+    while (remaining.size > 0) {
+      const last = route[route.length - 1];
+      let nearest = null, nearestD = Infinity;
+      for (const id of remaining) {
+        const d = haversine(last.lat, last.lon, byId[id].lat, byId[id].lon);
+        if (d < nearestD) { nearestD = d; nearest = id; }
+      }
+      route.push(byId[nearest]);
+      remaining.delete(nearest);
+    }
+    return route;
+  });
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371, dLat = (lat2-lat1)*Math.PI/180, dLon = (lon2-lon1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// =====================================================================
+// UI RENDERING
+// =====================================================================
+let weatherCache = {};
+let selectedDate = new Date().toISOString().slice(0, 10);
+let dayRisks = {};
+
+function formatDate(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const today = new Date().toISOString().slice(0, 10);
+  const tmrw = new Date(); tmrw.setDate(tmrw.getDate()+1);
+  if (dateStr === today) return 'Today';
+  if (dateStr === tmrw.toISOString().slice(0,10)) return 'Tomorrow';
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function renderDaySelector(dates) {
+  const el = document.getElementById('daySelector');
+  const dotColors = {low:'var(--green)',moderate:'var(--yellow)',high:'var(--orange)',critical:'var(--red)'};
+  el.innerHTML = dates.map(d => {
+    const r = dayRisks[d];
+    const dc = r ? dotColors[r.color] : '#ccc';
+    return `<button class="day-btn ${d===selectedDate?'active':''}" data-date="${d}"><span class="risk-dot" style="background:${dc}"></span>${formatDate(d)}</button>`;
+  }).join('');
+  el.querySelectorAll('.day-btn').forEach(btn => {
+    btn.addEventListener('click', () => { selectedDate = btn.dataset.date; renderAll(); });
+  });
+}
+
+function renderRiskBanner(dayRisk, wf) {
+  const banner = document.getElementById('riskBanner');
+  banner.className = `risk-banner ${dayRisk.color}`;
+  document.getElementById('riskLabel').textContent = `${dayRisk.level} RISK`;
+  document.getElementById('riskDetails').textContent = `Predicted DO: ${dayRisk.predictedDO.toFixed(2)} mg/L (OOR threshold: 3.0 mg/L)`;
+  document.getElementById('riskAdvice').textContent = dayRisk.advice;
+
+  document.getElementById('weatherCard').style.display = 'block';
+  document.getElementById('weatherGrid').innerHTML = [
+    {val: wf.t2m_3d.toFixed(1)+'°C', lbl:'Temperature (3d avg)'},
+    {val: wf.rh_3d.toFixed(0)+'%', lbl:'Humidity (3d avg)'},
+    {val: wf.cloud_3d.toFixed(0)+'%', lbl:'Cloud Cover (3d avg)'},
+    {val: wf.ws10_3d.toFixed(1)+' m/s', lbl:'Wind Speed (3d avg)'},
+    {val: wf.precip_3d_sum.toFixed(1)+' mm', lbl:'Precipitation (3d total)'},
+    {val: (wf.sunshine_3d_sum_s/3600).toFixed(1)+' hrs', lbl:'Sunshine (3d total)'},
+  ].map(i => `<div class="weather-item"><div class="val">${i.val}</div><div class="lbl">${i.lbl}</div></div>`).join('');
+}
+
+function renderStaffAssignments(clusters, dayRisk) {
+  const el = document.getElementById('staffAssignments');
+  if (!clusters || clusters.every(c => c.length === 0)) {
+    el.innerHTML = '<p style="color:var(--muted);padding:12px;">No ponds eligible for visits (all visited within the revisit window).</p>';
+    return;
+  }
+  const names = ['Staff A','Staff B','Staff C','Staff D','Staff E'].slice(0, clusters.length);
+  let active = 0;
+
+  function render() {
+    const totalKm = clusters[active].length > 1 ? estimateRouteKm(clusters[active]).toFixed(1) : '0.0';
+    el.innerHTML = `
+      <div class="staff-tabs">${names.map((n,i) =>
+        `<div class="staff-tab ${i===active?'active':''}" data-idx="${i}">${n} (${clusters[i].length})</div>`
+      ).join('')}</div>
+      <p style="font-size:0.78rem;color:var(--muted);margin-bottom:6px;">Route distance: ~${totalKm} km. Click a pond to log the visit.</p>
+      <div>${renderPondList(clusters[active])}</div>`;
+    el.querySelectorAll('.staff-tab').forEach(t => {
+      t.addEventListener('click', () => { active = +t.dataset.idx; render(); });
+    });
+    attachPondClickHandlers();
+  }
+  render();
+}
+
+function estimateRouteKm(ponds) {
+  let km = 0;
+  for (let i = 1; i < ponds.length; i++) km += haversine(ponds[i-1].lat, ponds[i-1].lon, ponds[i].lat, ponds[i].lon);
+  return km;
+}
+
+function renderPondList(ponds) {
+  if (ponds.length === 0) return '<p style="color:var(--muted);padding:12px;">No ponds assigned.</p>';
+  return ponds.map((p, i) => {
+    const vulnPct = (p.vulnerability * 100).toFixed(0);
+    const recencyLabel = p.daysSince !== null ? `${p.daysSince}d ago` : 'Never visited';
+    const barColor = p.vulnerability > 0.7 ? 'var(--red)' : p.vulnerability > 0.4 ? 'var(--orange)' : 'var(--green)';
+    const priPct = Math.min(100, (p.priority * 100)).toFixed(0);
+    return `<div class="pond-row" data-pond-id="${p.id}">
+      <div class="pond-rank">${i+1}</div>
+      <div class="pond-info">
+        <div class="pond-name">${p.id} — ${p.farmer}</div>
+        <div class="pond-meta">${p.village} · SD: ${(p.stocking_density||0).toLocaleString()} · Feed: ${p.feed_amount_kg||'?'} kg · ${p.pond_area_acres} ac · ${p.depth_m}m deep</div>
+      </div>
+      <div class="pond-scores">
+        <span class="pond-badge badge-vuln" title="Vulnerability: higher = more at-risk">Vuln ${vulnPct}%</span>
+        <span class="pond-badge badge-recency" title="Days since last visit">${recencyLabel}</span>
+      </div>
+      <div class="priority-bar" title="Priority ${priPct}%">
+        <div class="priority-fill" style="width:${priPct}%;background:${barColor}"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function attachPondClickHandlers() {
+  document.querySelectorAll('.pond-row').forEach(row => {
+    row.style.cursor = 'pointer';
+    row.addEventListener('click', () => {
+      const id = row.dataset.pondId;
+      const pond = PONDS.find(p => p.id === id);
+      if (confirm(`Log visit to ${id}${pond ? ' ('+pond.farmer+')' : ''} on ${selectedDate}?`)) {
+        visitLog.push({ pondId: id, date: selectedDate });
+        saveLog();
+        renderAll();
+      }
+    });
+  });
+}
+
+function renderAllPonds(scored) {
+  document.getElementById('allPondsList').innerHTML = renderPondList(scored);
+}
+
+function renderVisitLog() {
+  const el = document.getElementById('logEntries');
+  if (visitLog.length === 0) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:0.85rem;padding:12px 0;">No visits logged yet.</p>';
+    return;
+  }
+  const sorted = [...visitLog].sort((a,b) => b.date.localeCompare(a.date));
+  el.innerHTML = sorted.map(v => {
+    const pond = PONDS.find(p => p.id === v.pondId);
+    return `<div class="log-entry"><span class="log-pond">${v.pondId}${pond?' — '+pond.farmer:''}</span><span class="log-date">${v.date}</span></div>`;
+  }).join('');
+}
+
+// =====================================================================
+// MAIN RENDER
+// =====================================================================
+function renderAll() {
+  const dates = getDates();
+  renderDaySelector(dates);
+
+  const wf = weatherCache[selectedDate];
+  const dayRisk = dayRisks[selectedDate];
+  if (!wf || !dayRisk) return;
+
+  renderRiskBanner(dayRisk, wf);
+
+  const scored = computePondScores(PONDS, selectedDate);
+  renderAllPonds(scored);
+
+  const numStaff = parseInt(document.getElementById('staffCount')?.value || '3');
+  const isHighRisk = dayRisk.color === 'high' || dayRisk.color === 'critical';
+  const vpNormal = parseInt(document.getElementById('visitsNormal')?.value || '4');
+  const vpHigh = parseInt(document.getElementById('visitsHigh')?.value || '6');
+  const visitsPerStaff = isHighRisk ? vpHigh : vpNormal;
+  const minRevisit = parseInt(document.getElementById('revisitDays')?.value || '5');
+
+  const clusters = clusterPondsForStaff(scored, numStaff, visitsPerStaff, minRevisit, selectedDate);
+  const totalVisits = clusters.reduce((s,c) => s + c.length, 0);
+  document.getElementById('planTitle').textContent = `${formatDate(selectedDate)} — ${totalVisits} visits planned`;
+  renderStaffAssignments(clusters, dayRisk);
+  renderVisitLog();
+}
+
+function getDates() {
+  const dates = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(); d.setDate(d.getDate() + i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+  return dates;
+}
+
+// =====================================================================
+// INIT
+// =====================================================================
+async function init() {
+  document.getElementById('riskLabel').textContent = 'Loading weather data...';
+  document.getElementById('riskDetails').textContent = 'Fetching forecast from Open-Meteo...';
+
+  // Load pond data
+  try {
+    const resp = await fetch('ponds.json');
+    if (!resp.ok) throw new Error('ponds.json not found');
+    PONDS = await resp.json();
+  } catch(e) {
+    document.getElementById('riskLabel').textContent = 'Error';
+    document.getElementById('riskDetails').textContent = 'Could not load pond data (ponds.json).';
+    console.error(e);
+    return;
+  }
+
+  const dates = getDates();
+  selectedDate = dates[0];
+
+  try {
+    const hourlyData = await fetchWeather(dates);
+    for (const date of dates) {
+      const wf = computeWeatherFeatures(hourlyData, date);
+      if (wf) { weatherCache[date] = wf; dayRisks[date] = computeDayRisk(wf); }
+    }
+  } catch(e) {
+    console.error('Weather fetch error:', e);
+    document.getElementById('riskLabel').textContent = 'Weather Unavailable';
+    document.getElementById('riskDetails').textContent = 'Could not reach Open-Meteo API. Check your connection.';
+    return;
+  }
+
+  renderAll();
+
+  // Settings listeners
+  ['staffCount','visitsNormal','visitsHigh','revisitDays','wVuln','wRecency'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', renderAll);
+    document.getElementById(id)?.addEventListener('input', () => {
+      if (document.getElementById(id).type === 'range') renderAll();
+    });
+  });
+  document.getElementById('settingsToggle').addEventListener('click', () => {
+    document.getElementById('settingsPanel').classList.toggle('open');
+  });
+  document.getElementById('clearLog').addEventListener('click', () => {
+    if (confirm('Clear all visit history?')) { visitLog = []; saveLog(); renderAll(); }
+  });
+  document.querySelectorAll('.main-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('tab-'+tab.dataset.tab).classList.add('active');
+    });
+  });
+}
+
+init();
+</script>
+</body>
+</html>
