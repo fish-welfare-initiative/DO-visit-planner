@@ -102,6 +102,17 @@
   .method-table th { background: var(--bg); font-weight: 600; }
   .method-note { font-size: 0.8rem; color: var(--muted); font-style: italic; margin-top: 6px; }
 
+  /* Data tables */
+  .data-table-wrap { overflow-x: auto; }
+  .data-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .data-table th { background: var(--bg); font-weight: 600; padding: 7px 10px; border: 1px solid var(--border); white-space: nowrap; position: sticky; top: 0; }
+  .data-table td { padding: 6px 10px; border: 1px solid var(--border); vertical-align: top; }
+  .data-table tr:hover td { background: #f1f3f5; }
+  .data-table .oor { color: var(--red); font-weight: 600; }
+  .data-table .good { color: var(--green); }
+  .table-filter { padding: 5px 10px; border: 1px solid var(--border); border-radius: 4px; font-size: 0.85rem; width: 200px; margin-bottom: 10px; }
+  .empty-state { text-align: center; padding: 40px; color: var(--muted); font-size: 0.9rem; }
+
   /* Responsive */
   @media (max-width: 600px) {
     .settings-row { grid-template-columns: 1fr; }
@@ -139,6 +150,9 @@
     <div class="main-tab active" data-tab="plan">Visit Plan</div>
     <div class="main-tab" data-tab="allponds">All Ponds</div>
     <div class="main-tab" data-tab="log">Visit Log</div>
+    <div class="main-tab" data-tab="ponds-table">Ponds</div>
+    <div class="main-tab" data-tab="measurements-table">Measurements</div>
+    <div class="main-tab" data-tab="stocking-table">Stocking &amp; Harvest</div>
     <div class="main-tab" data-tab="method">How It Works</div>
   </div>
 
@@ -203,6 +217,33 @@
       </div>
       <p style="font-size:0.8rem;color:var(--muted);margin-bottom:8px;">Click a pond in the visit plan to log it as visited. This affects future rotation priority.</p>
       <div id="logEntries"><p style="color:var(--muted);font-size:0.85rem;padding:12px 0;">No visits logged yet.</p></div>
+    </div>
+  </div>
+
+  <!-- Ponds Table Tab -->
+  <div class="tab-content" id="tab-ponds-table">
+    <div class="card">
+      <h2>Ponds</h2>
+      <p style="font-size:0.8rem;color:var(--muted);margin-bottom:10px;">Pond records from the ARA data system.</p>
+      <div id="pondsTableWrap" class="data-table-wrap"><p class="loading">Loading…</p></div>
+    </div>
+  </div>
+
+  <!-- Measurements Table Tab -->
+  <div class="tab-content" id="tab-measurements-table">
+    <div class="card">
+      <h2>Measurements</h2>
+      <p style="font-size:0.8rem;color:var(--muted);margin-bottom:6px;">Water quality measurements from the ARA data system. <span style="color:var(--red);font-weight:600;">Red</span> values are out of acceptable range.</p>
+      <input class="table-filter" id="measurementFilter" type="search" placeholder="Filter by pond, date…" oninput="filterMeasurements()">
+      <div id="measurementsTableWrap" class="data-table-wrap"><p class="loading">Loading…</p></div>
+    </div>
+  </div>
+
+  <!-- Stocking & Harvest Table Tab -->
+  <div class="tab-content" id="tab-stocking-table">
+    <div class="card">
+      <h2>Stocking &amp; Harvest</h2>
+      <div class="empty-state">No stocking &amp; harvest records available in the current data export.</div>
     </div>
   </div>
 
@@ -841,6 +882,107 @@ async function init() {
 }
 
 init();
+
+// ---- ARA Data Tables ----
+let measurementsData = [];
+
+const OOR = {
+  dissolved_oxygen: v => v !== null && v < 3.0,
+  ph:               v => v !== null && (v < 6.5 || v > 9.0),
+  ammonia:          v => v !== null && v > 0.5,
+  turbidity:        v => v !== null && v > 40,
+};
+
+function cell(val, field) {
+  if (val === null || val === undefined) return '<td style="color:var(--muted)">—</td>';
+  const cls = OOR[field] && OOR[field](val) ? ' class="oor"' : (field && !OOR[field] ? '' : ' class="good"');
+  return `<td${OOR[field] ? (OOR[field](val) ? ' class="oor"' : ' class="good"') : ''}>${val}</td>`;
+}
+
+async function loadPondsTable() {
+  try {
+    const res = await fetch('ponds_ara.json');
+    const data = await res.json();
+    const cols = ['Code','Farmer','Village','Pond Area (ac)','Property Area (ac)','Depth (m)','Lifecycle','Tenure','Feed Types','Feed Brand'];
+    let html = `<table class="data-table"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>`;
+    for (const p of data) {
+      const feeds = Array.isArray(p.feed_types) ? p.feed_types.join(', ').replace(/_/g,' ') : (p.feed_types||'—');
+      html += `<tr>
+        <td><strong>${p.code}</strong></td>
+        <td>${p.farmer_name||'—'}</td>
+        <td>${p.village||'—'}</td>
+        <td>${p.pond_area_in_acres??'—'}</td>
+        <td>${p.property_area_in_acres??'—'}</td>
+        <td>${p.depth_in_meters??'—'}</td>
+        <td>${(p.lifecycle||'—').replace(/_/g,' ')}</td>
+        <td>${(p.tenure||'—').replace(/_/g,' ')}</td>
+        <td>${feeds}</td>
+        <td>${p.feed_brand_or_name||'—'}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    document.getElementById('pondsTableWrap').innerHTML = html;
+  } catch(e) {
+    document.getElementById('pondsTableWrap').innerHTML = `<p class="error-msg">Could not load ponds_ara.json: ${e.message}</p>`;
+  }
+}
+
+async function loadMeasurementsTable() {
+  try {
+    const res = await fetch('measurements.json');
+    measurementsData = await res.json();
+    renderMeasurementsTable(measurementsData);
+  } catch(e) {
+    document.getElementById('measurementsTableWrap').innerHTML = `<p class="error-msg">Could not load measurements.json: ${e.message}</p>`;
+  }
+}
+
+function renderMeasurementsTable(data) {
+  if (!data.length) { document.getElementById('measurementsTableWrap').innerHTML = '<p class="empty-state">No records.</p>'; return; }
+  const cols = ['Date','Time','Pond','DO (mg/L)','pH','Ammonia','Turbidity (NTU)','Temp (°C)','TDS','Water Color','Feed (kg)','Follow-up','Weather'];
+  let html = `<table class="data-table"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>`;
+  for (const m of data) {
+    const weather = (() => { try { return JSON.parse(m.weather||'[]').join(', ').replace(/_/g,' '); } catch(e) { return m.weather||'—'; } })();
+    html += `<tr>
+      <td>${(m.data_collected_at||'').split(' ')[0]}</td>
+      <td>${m.time_of_day||'—'}</td>
+      <td>${m.pond_code||'—'}</td>
+      ${cell(m.dissolved_oxygen,'dissolved_oxygen')}
+      ${cell(m.ph,'ph')}
+      ${cell(m.ammonia,'ammonia')}
+      ${cell(m.turbidity,'turbidity')}
+      <td>${m.temperature??'—'}</td>
+      <td>${m.tds??'—'}</td>
+      <td>${(m.water_color||'—').replace(/_/g,' ')}</td>
+      <td>${m.feed_amount_in_kg??'—'}</td>
+      <td>${m.is_follow_up ? 'Yes' : 'No'}</td>
+      <td style="font-size:0.78rem;color:var(--muted)">${weather}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  document.getElementById('measurementsTableWrap').innerHTML = html;
+}
+
+function filterMeasurements() {
+  const q = document.getElementById('measurementFilter').value.toLowerCase();
+  if (!q) { renderMeasurementsTable(measurementsData); return; }
+  renderMeasurementsTable(measurementsData.filter(m =>
+    (m.pond_code||'').toLowerCase().includes(q) ||
+    (m.data_collected_at||'').toLowerCase().includes(q) ||
+    (m.farmer_name||'').toLowerCase().includes(q) ||
+    (m.water_color||'').toLowerCase().includes(q)
+  ));
+}
+
+// Lazy-load tables when tab is first clicked
+const tabsLoaded = {};
+document.querySelectorAll('.main-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const t = tab.dataset.tab;
+    if (t === 'ponds-table' && !tabsLoaded[t]) { tabsLoaded[t] = true; loadPondsTable(); }
+    if (t === 'measurements-table' && !tabsLoaded[t]) { tabsLoaded[t] = true; loadMeasurementsTable(); }
+  });
+});
 </script>
 </body>
 </html>
