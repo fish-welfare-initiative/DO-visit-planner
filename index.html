@@ -262,7 +262,11 @@
   <div class="tab-content" id="tab-weekview">
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
-        <h2 id="weekViewTitle">Week View</h2>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <button id="weekPrev" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);cursor:pointer;font-size:1rem;line-height:1;" onclick="changeWeek(-1)">←</button>
+          <h2 id="weekViewTitle">Week View</h2>
+          <button id="weekNext" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);cursor:pointer;font-size:1rem;line-height:1;" onclick="changeWeek(1)">→</button>
+        </div>
         <span style="font-size:0.8rem;color:var(--muted);">Scheduled sequentially — ponds visited earlier in the week are excluded from later days</span>
       </div>
       <div id="weekGridContent"><p class="loading">Loading…</p></div>
@@ -1020,12 +1024,30 @@ init();
 // =====================================================================
 // WEEK VIEW
 // =====================================================================
+let weekOffset = 0;
+
 function getWeekdayDates() {
-  // Next 5 weekdays (Mon–Fri) from today, using only dates with risk data
-  return getDates().filter(d => {
-    const dow = new Date(d + 'T12:00:00').getDay();
-    return dow >= 1 && dow <= 5;
-  });
+  // Get Monday of the target week (current week + weekOffset)
+  const today = new Date();
+  const dow = today.getDay();
+  const daysToMonday = dow === 0 ? -6 : 1 - dow;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + daysToMonday + (weekOffset * 7));
+
+  const dates = [];
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+
+  // Only include dates that have weather data
+  return dates.filter(d => zoneRisks[d] && zoneRisks[d].length > 0);
+}
+
+function changeWeek(delta) {
+  weekOffset += delta;
+  loadWeekView();
 }
 
 function computeWeekSchedule(dates) {
@@ -1118,6 +1140,22 @@ function loadWeekView() {
   const dates = getWeekdayDates();
   const schedule = computeWeekSchedule(dates);
   renderWeekGrid(schedule, dates);
+
+  const prevBtn = document.getElementById('weekPrev');
+  const nextBtn = document.getElementById('weekNext');
+  if (prevBtn) {
+    prevBtn.disabled = weekOffset <= 0;
+    prevBtn.style.opacity = weekOffset <= 0 ? '0.35' : '1';
+    prevBtn.style.cursor = weekOffset <= 0 ? 'not-allowed' : 'pointer';
+  }
+  if (nextBtn) {
+    weekOffset++;
+    const nextDates = getWeekdayDates();
+    weekOffset--;
+    nextBtn.disabled = nextDates.length === 0;
+    nextBtn.style.opacity = nextDates.length === 0 ? '0.35' : '1';
+    nextBtn.style.cursor = nextDates.length === 0 ? 'not-allowed' : 'pointer';
+  }
 }
 
 // ---- ARA Data Tables ----
