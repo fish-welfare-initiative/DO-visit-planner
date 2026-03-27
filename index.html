@@ -188,6 +188,7 @@
     <div class="main-tab" data-tab="ponds-table">Ponds</div>
     <div class="main-tab" data-tab="measurements-table">Measurements</div>
     <div class="main-tab" data-tab="stocking-table">Stocking &amp; Harvest</div>
+    <div class="main-tab" data-tab="map">Map</div>
     <div class="main-tab" data-tab="method">How It Works</div>
   </div>
 
@@ -303,6 +304,18 @@
     <div class="card">
       <h2>Stocking &amp; Harvest</h2>
       <div class="empty-state">No stocking &amp; harvest records available in the current data export.</div>
+    </div>
+  </div>
+
+  <!-- Map Tab -->
+  <div class="tab-content" id="tab-map">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+        <h2>Visit Map</h2>
+        <div id="mapDaySelector" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      </div>
+      <div id="mapLegend" style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px;font-size:0.82rem;"></div>
+      <div id="map" style="height:520px;border-radius:6px;border:1px solid var(--border);"></div>
     </div>
   </div>
 
@@ -1275,12 +1288,154 @@ function filterMeasurements() {
   ));
 }
 
+// =====================================================================
+// MAP TAB
+// =====================================================================
+const STAFF_COLORS = ['#0d6efd','#fd7e14','#198754','#6f42c1','#dc3545'];
+const STAFF_NAMES  = ['Staff A','Staff B','Staff C','Staff D','Staff E'];
+let mapInstance    = null;
+let mapLayers      = [];
+let mapSelectedDate = new Date().toISOString().slice(0, 10);
+let mapScheduleCache = null;
+
+function getCurrentWeekDates() {
+  const today = new Date();
+  const dow = today.getDay();
+  const daysToMonday = dow === 0 ? -6 : 1 - dow;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + daysToMonday);
+  const dates = [];
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+  return dates.filter(d => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    return d < todayStr || (zoneRisks[d] && zoneRisks[d].length > 0);
+  });
+}
+
+function initMap() {
+  if (mapInstance) { mapInstance.invalidateSize(); return; }
+  mapInstance = L.map('map').setView([16.63, 81.12], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(mapInstance);
+}
+
+function clearMapLayers() {
+  mapLayers.forEach(l => mapInstance.removeLayer(l));
+  mapLayers = [];
+}
+
+function renderMap(date) {
+  if (!mapInstance) return;
+  clearMapLayers();
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  if (date < todayStr) {
+    // Past day: show actual measurement locations in grey
+    const dayM = measurementsData.filter(m => (m.data_collected_at||'').startsWith(date));
+    dayM.forEach(m => {
+      const pond = PONDS.find(p => p.id === m.pond_code);
+      if (!pond || !pond.lat || !pond.lon) return;
+      const doVal = m.dissolved_oxygen;
+      const oor = isAnyOOR(m);
+      const marker = L.circleMarker([pond.lat, pond.lon], {
+        radius: 7, fillColor: oor ? '#dc3545' : '#6c757d',
+        color: '#fff', weight: 1.5, opacity: 1, fillOpacity: 0.85
+      }).addTo(mapInstance);
+      marker.bindPopup(`<strong>${pond.id}</strong><br>${pond.farmer}<br>DO: ${doVal ?? '—'}${oor ? ' ⚠ OOR' : ''}`);
+      mapLayers.push(marker);
+    });
+    return;
+  }
+
+  // Future day: show staff-colored routes from schedule
+  if (!mapScheduleCache) mapScheduleCache = computeWeekSchedule(getCurrentWeekDates());
+  const daySched = mapScheduleCache[date];
+  if (!daySched || !daySched.clusters) return;
+
+  daySched.clusters.forEach((cluster, si) => {
+    const color = STAFF_COLORS[si] || '#6c757d';
+    if (cluster.length > 1) {
+      const line = L.polyline(cluster.map(p => [p.lat, p.lon]), {
+        color, weight: 2.5, opacity: 0.55, dashArray: '5,4'
+      }).addTo(mapInstance);
+      mapLayers.push(line);
+    }
+    cluster.forEach((pond, rank) => {
+      const marker = L.circleMarker([pond.lat, pond.lon], {
+        radius: 7, fillColor: color, color: '#fff',
+        weight: 1.5, opacity: 1, fillOpacity: 0.85
+      }).addTo(mapInstance);
+      marker.bindPopup(`<strong>${pond.id}</strong><br>${pond.farmer}<br>${STAFF_NAMES[si]} · Stop ${rank + 1}<br>Vuln: ${(pond.vulnerability*100).toFixed(0)}%`);
+      mapLayers.push(marker);
+    });
+  });
+}
+
+function renderMapDaySelector() {
+  const dates = getCurrentWeekDates();
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  // Ensure selected date is in range
+  if (!dates.includes(mapSelectedDate)) mapSelectedDate = dates.find(d => d >= todayStr) || dates[0];
+
+  document.getElementById('mapDaySelector').innerHTML = dates.map(d =>
+    `<button class="day-btn ${d === mapSelectedDate ? 'active' : ''}" onclick="selectMapDay('${d}')">${formatDate(d)}</button>`
+  ).join('');
+
+  // Legend
+  const legend = document.getElementById('mapLegend');
+  if (mapSelectedDate < todayStr) {
+    legend.innerHTML =
+      '<span style="color:var(--muted)"><span style="display:inline-block;width:10px;height:10px;background:#6c757d;border-radius:50%;margin-right:4px;vertical-align:middle;"></span>Visited</span>' +
+      '<span style="color:var(--muted)"><span style="display:inline-block;width:10px;height:10px;background:#dc3545;border-radius:50%;margin-right:4px;vertical-align:middle;"></span>OOR</span>';
+  } else {
+    if (!mapScheduleCache) mapScheduleCache = computeWeekSchedule(getCurrentWeekDates());
+    const n = mapScheduleCache[mapSelectedDate]?.clusters?.length || 0;
+    legend.innerHTML = STAFF_NAMES.slice(0, n).map((name, si) =>
+      `<span><span style="display:inline-block;width:10px;height:10px;background:${STAFF_COLORS[si]};border-radius:50%;margin-right:4px;vertical-align:middle;"></span>${name}</span>`
+    ).join('');
+  }
+}
+
+function selectMapDay(date) {
+  mapSelectedDate = date;
+  renderMapDaySelector();
+  renderMap(date);
+}
+
+function loadMapTab() {
+  if (window.L) {
+    initMap();
+    setTimeout(() => { mapInstance.invalidateSize(); renderMapDaySelector(); renderMap(mapSelectedDate); }, 50);
+    return;
+  }
+  // Lazy-load Leaflet from CDN
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+  document.head.appendChild(link);
+  const script = document.createElement('script');
+  script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  script.onload = () => {
+    initMap();
+    renderMapDaySelector();
+    renderMap(mapSelectedDate);
+  };
+  document.head.appendChild(script);
+}
+
 // Lazy-load tabs when first clicked
 const tabsLoaded = {};
 document.querySelectorAll('.main-tab').forEach(tab => {
   tab.addEventListener('click', () => {
     const t = tab.dataset.tab;
-    if (t === 'weekview') { loadWeekView(); } // always recompute (respects current settings)
+    if (t === 'weekview') { loadWeekView(); }
+    if (t === 'map') { loadMapTab(); }
     if (t === 'ponds-table' && !tabsLoaded[t]) { tabsLoaded[t] = true; loadPondsTable(); }
     if (t === 'measurements-table' && !tabsLoaded[t]) { tabsLoaded[t] = true; loadMeasurementsTable(); }
   });
