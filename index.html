@@ -168,8 +168,6 @@
   </div>
   <p class="subtitle">Dissolved oxygen risk forecast &amp; pond visit prioritization</p>
 
-  <!-- Day selector -->
-  <div class="day-selector" id="daySelector"></div>
 
   <!-- Day Risk Banner -->
   <div id="riskBanner" class="risk-banner low">
@@ -743,18 +741,6 @@ function formatDate(dateStr) {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-function renderDaySelector(dates) {
-  const el = document.getElementById('daySelector');
-  const dotColors = {low:'var(--green)',moderate:'var(--yellow)',high:'var(--orange)',critical:'var(--red)'};
-  el.innerHTML = dates.map(d => {
-    const zrl = zoneRisks[d];
-    const worstColor = zrl && zrl[0]?.risk ? dotColors[zrl[0].risk.color] : '#ccc';
-    return `<button class="day-btn ${d===selectedDate?'active':''}" data-date="${d}"><span class="risk-dot" style="background:${worstColor}"></span>${formatDate(d)}</button>`;
-  }).join('');
-  el.querySelectorAll('.day-btn').forEach(btn => {
-    btn.addEventListener('click', () => { selectedDate = btn.dataset.date; renderAll(); });
-  });
-}
 
 function renderRiskBanner(zoneRiskList) {
   if (!zoneRiskList || zoneRiskList.length === 0) return;
@@ -894,9 +880,6 @@ function renderVisitLog() {
 // MAIN RENDER
 // =====================================================================
 function renderAll() {
-  const dates = getDates();
-  renderDaySelector(dates);
-
   const zoneRiskList = zoneRisks[selectedDate];
   if (!zoneRiskList || zoneRiskList.length === 0) return;
 
