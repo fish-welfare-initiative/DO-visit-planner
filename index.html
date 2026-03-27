@@ -949,6 +949,7 @@ async function init() {
   // Prefetch measurements for past-day display in week view
   fetch('measurements.json').then(r => r.json()).then(data => {
     measurementsData = data;
+    buildFollowUpKeys(data);
     loadWeekView(); // re-render with actual measurements filled in
   }).catch(() => {});
 
@@ -1096,9 +1097,13 @@ function renderWeekGrid(schedule, dates) {
         if (!dayM.length) return `<td class="week-cell empty-cell" rowspan="${numStaff}">No data</td>`;
         const items = dayM.map(m => {
           const doVal = m.dissolved_oxygen;
-          const oor = doVal !== null && doVal !== undefined && doVal < 3.0;
-          return `<div class="week-pond">
-            <span class="week-pond-id">${m.pond_code||'—'}</span>
+          const oor = isAnyOOR(m);
+          const mKey = (m.data_collected_at||'') + '_' + (m.pond_code||'');
+          const isFU = followUpKeys.has(mKey);
+          const fuBadge = isFU ? '<span style="font-size:0.65rem;background:var(--accent);color:#fff;padding:1px 5px;border-radius:3px;font-weight:600;margin-left:5px;vertical-align:middle;">FU</span>' : '';
+          const rowStyle = isFU ? 'background:#eef4ff;border-radius:4px;padding:2px 4px;margin:1px 0;' : '';
+          return `<div class="week-pond" style="${rowStyle}">
+            <span class="week-pond-id">${m.pond_code||'—'}${fuBadge}</span>
             <span class="week-pond-farmer" style="color:${oor ? 'var(--red)' : 'var(--muted)'}">DO: ${doVal ?? '—'}${oor ? ' ⚠' : ''}</span>
           </div>`;
         }).join('');
@@ -1153,6 +1158,7 @@ function loadWeekView() {
 
 // ---- ARA Data Tables ----
 let measurementsData = [];
+let followUpKeys = new Set(); // pre-computed set of "data_collected_at_pondcode" follow-up keys
 
 const OOR = {
   dissolved_oxygen: v => v !== null && v < 3.0,
@@ -1160,6 +1166,33 @@ const OOR = {
   ammonia:          v => v !== null && v > 0.5,
   turbidity:        v => v !== null && v > 40,
 };
+
+function isAnyOOR(m) {
+  return (m.dissolved_oxygen != null && OOR.dissolved_oxygen(m.dissolved_oxygen)) ||
+         (m.ph != null && OOR.ph(m.ph)) ||
+         (m.ammonia != null && OOR.ammonia(m.ammonia)) ||
+         (m.turbidity != null && OOR.turbidity(m.turbidity));
+}
+
+function buildFollowUpKeys(measurements) {
+  // Sort chronologically, then for each OOR measurement mark the next visit
+  // to the same pond within 7 days as a follow-up
+  const sorted = [...measurements].sort((a, b) =>
+    (a.data_collected_at||'').localeCompare(b.data_collected_at||'')
+  );
+  followUpKeys = new Set();
+  const pondLastOOR = {}; // pond_code -> date string of last OOR visit
+  for (const m of sorted) {
+    const mDate = (m.data_collected_at||'').split(' ')[0];
+    const mKey  = (m.data_collected_at||'') + '_' + (m.pond_code||'');
+    const lastOOR = pondLastOOR[m.pond_code];
+    if (lastOOR) {
+      const daysDiff = (new Date(mDate+'T12:00:00') - new Date(lastOOR+'T12:00:00')) / 86400000;
+      if (daysDiff >= 1 && daysDiff <= 7) followUpKeys.add(mKey);
+    }
+    if (isAnyOOR(m)) pondLastOOR[m.pond_code] = mDate;
+  }
+}
 
 function cell(val, field) {
   if (val === null || val === undefined) return '<td style="color:var(--muted)">—</td>';
