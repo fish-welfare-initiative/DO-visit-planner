@@ -182,12 +182,6 @@
     </div>
   </div>
 
-  <!-- Weather card -->
-  <div class="card" id="weatherCard" style="display:none">
-    <h3>Weather Summary (3-day rolling)</h3>
-    <div class="weather-grid" id="weatherGrid"></div>
-  </div>
-
   <!-- Main tabs -->
   <div class="main-tabs">
     <div class="main-tab active" data-tab="plan">Visit Plan</div>
@@ -816,19 +810,6 @@ function renderRiskBanner(zoneRiskList) {
     strip.style.display = 'none';
   }
 
-  // Weather card — show highest-risk zone's weather
-  const topWf = topZones[0].wf;
-  const topZoneName = topZones.length === 1 ? topZones[0].zone.name : `${topZones.length} zones`;
-  document.getElementById('weatherCard').style.display = 'block';
-  document.getElementById('weatherCard').querySelector('h3').textContent = `Weather Summary — ${topZoneName} (3-day rolling)`;
-  document.getElementById('weatherGrid').innerHTML = [
-    {val: topWf.t2m_3d.toFixed(1)+'°C',              lbl:'Temperature (3d avg)'},
-    {val: topWf.rh_3d.toFixed(0)+'%',                lbl:'Humidity (3d avg)'},
-    {val: topWf.cloud_3d.toFixed(0)+'%',             lbl:'Cloud Cover (3d avg)'},
-    {val: topWf.ws10_3d.toFixed(1)+' m/s',           lbl:'Wind Speed (3d avg)'},
-    {val: topWf.precip_3d_sum.toFixed(1)+' mm',      lbl:'Precipitation (3d total)'},
-    {val: (topWf.sunshine_3d_sum_s/3600).toFixed(1)+' hrs', lbl:'Sunshine (3d total)'},
-  ].map(i => `<div class="weather-item"><div class="val">${i.val}</div><div class="lbl">${i.lbl}</div></div>`).join('');
 }
 
 function renderStaffAssignments(clusters, dayRisk) {
