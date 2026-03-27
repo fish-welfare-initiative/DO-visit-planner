@@ -184,8 +184,7 @@
 
   <!-- Main tabs -->
   <div class="main-tabs">
-    <div class="main-tab active" data-tab="plan">Visit Plan</div>
-    <div class="main-tab" data-tab="weekview">Week View</div>
+    <div class="main-tab active" data-tab="weekview">Week View</div>
     <div class="main-tab" data-tab="allponds">All Ponds</div>
     <div class="main-tab" data-tab="log">Visit Log</div>
     <div class="main-tab" data-tab="ponds-table">Ponds</div>
@@ -194,11 +193,15 @@
     <div class="main-tab" data-tab="method">How It Works</div>
   </div>
 
-  <!-- Visit Plan Tab -->
-  <div class="tab-content active" id="tab-plan">
+  <!-- Week View Tab -->
+  <div class="tab-content active" id="tab-weekview">
     <div class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap: wrap;">
-        <h2 id="planTitle">Today's Visit Plan</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <button id="weekPrev" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);cursor:pointer;font-size:1rem;line-height:1;" onclick="changeWeek(-1)">←</button>
+          <h2 id="weekViewTitle">Week View</h2>
+          <button id="weekNext" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);cursor:pointer;font-size:1rem;line-height:1;" onclick="changeWeek(1)">→</button>
+        </div>
         <span class="settings-toggle" id="settingsToggle">Settings</span>
       </div>
       <div class="settings-panel" id="settingsPanel">
@@ -252,23 +255,7 @@
         </div>
 
       </div>
-
-      <!-- Staff assignments -->
-      <div id="staffAssignments"></div>
-    </div>
-  </div>
-
-  <!-- Week View Tab -->
-  <div class="tab-content" id="tab-weekview">
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <button id="weekPrev" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);cursor:pointer;font-size:1rem;line-height:1;" onclick="changeWeek(-1)">←</button>
-          <h2 id="weekViewTitle">Week View</h2>
-          <button id="weekNext" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);cursor:pointer;font-size:1rem;line-height:1;" onclick="changeWeek(1)">→</button>
-        </div>
-        <span style="font-size:0.8rem;color:var(--muted);">Scheduled sequentially — ponds visited earlier in the week are excluded from later days</span>
-      </div>
+      <p style="font-size:0.8rem;color:var(--muted);margin-bottom:8px;">Scheduled sequentially — ponds visited earlier in the week are excluded from later days</p>
       <div id="weekGridContent"><p class="loading">Loading…</p></div>
     </div>
   </div>
@@ -912,24 +899,11 @@ function renderAll() {
 
   const zoneRiskList = zoneRisks[selectedDate];
   if (!zoneRiskList || zoneRiskList.length === 0) return;
-  const worstRisk = zoneRiskList[0].risk;
 
   renderRiskBanner(zoneRiskList);
 
   const scored = computePondScores(PONDS, selectedDate);
   renderAllPonds(scored);
-
-  const numStaff = parseInt(document.getElementById('staffCount')?.value || '3');
-  const isHighRisk = worstRisk.color === 'high' || worstRisk.color === 'critical';
-  const vpNormal = parseInt(document.getElementById('visitsNormal')?.value || '4');
-  const vpHigh = parseInt(document.getElementById('visitsHigh')?.value || '6');
-  const visitsPerStaff = isHighRisk ? vpHigh : vpNormal;
-  const minRevisit = parseInt(document.getElementById('revisitDays')?.value || '5');
-
-  const clusters = clusterPondsForStaff(scored, numStaff, visitsPerStaff, minRevisit, selectedDate);
-  const totalVisits = clusters.reduce((s,c) => s + c.length, 0);
-  document.getElementById('planTitle').textContent = `${formatDate(selectedDate)} — ${totalVisits} visits planned`;
-  renderStaffAssignments(clusters, worstRisk);
   renderVisitLog();
 }
 
@@ -987,12 +961,13 @@ async function init() {
   }
 
   renderAll();
+  loadWeekView();
 
-  // Settings listeners
+  // Settings listeners — reload both risk banner and week grid
   ['staffCount','visitsNormal','visitsHigh','revisitDays','wVuln','wRecency','wDist','wPriority'].forEach(id => {
-    document.getElementById(id)?.addEventListener('change', renderAll);
+    document.getElementById(id)?.addEventListener('change', () => { renderAll(); loadWeekView(); });
     document.getElementById(id)?.addEventListener('input', () => {
-      if (document.getElementById(id).type === 'range') renderAll();
+      if (document.getElementById(id).type === 'range') { renderAll(); loadWeekView(); }
     });
   });
   // Live slider value display
