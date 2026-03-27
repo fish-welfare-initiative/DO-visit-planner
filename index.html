@@ -963,6 +963,12 @@ async function init() {
   renderAll();
   loadWeekView();
 
+  // Prefetch measurements for past-day display in week view
+  fetch('measurements.json').then(r => r.json()).then(data => {
+    measurementsData = data;
+    loadWeekView(); // re-render with actual measurements filled in
+  }).catch(() => {});
+
   // Settings listeners — reload both risk banner and week grid
   ['staffCount','visitsNormal','visitsHigh','revisitDays','wVuln','wRecency','wDist','wPriority'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', () => { renderAll(); loadWeekView(); });
@@ -1002,7 +1008,7 @@ init();
 let weekOffset = 0;
 
 function getWeekdayDates() {
-  // Get Monday of the target week (current week + weekOffset)
+  const todayStr = new Date().toISOString().slice(0, 10);
   const today = new Date();
   const dow = today.getDay();
   const daysToMonday = dow === 0 ? -6 : 1 - dow;
@@ -1016,8 +1022,9 @@ function getWeekdayDates() {
     dates.push(d.toISOString().slice(0, 10));
   }
 
-  // Only include dates that have weather data
-  return dates.filter(d => zoneRisks[d] && zoneRisks[d].length > 0);
+  // Past days: always include (show actual measurements, no weather data needed)
+  // Future days: only include if weather data is available
+  return dates.filter(d => d < todayStr || (zoneRisks[d] && zoneRisks[d].length > 0));
 }
 
 function changeWeek(delta) {
@@ -1035,7 +1042,11 @@ function computeWeekSchedule(dates) {
   const simulatedLog = [...visitLog];
   const schedule = {};
 
+  const todayStr = new Date().toISOString().slice(0, 10);
   for (const date of dates) {
+    // Skip past dates — they'll show actual measurements instead
+    if (date < todayStr) { schedule[date] = { clusters: null, risk: null }; continue; }
+
     const zrl = zoneRisks[date];
     const worstRisk = zrl?.[0]?.risk;
     const isHighRisk = worstRisk && (worstRisk.color === 'high' || worstRisk.color === 'critical');
@@ -1061,22 +1072,31 @@ function computeWeekSchedule(dates) {
 }
 
 function renderWeekGrid(schedule, dates) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+
   if (!dates.length) {
     document.getElementById('weekGridContent').innerHTML = '<p class="empty-state">No weekday dates available in the current forecast window.</p>';
     return;
   }
 
-  const numStaff = schedule[dates[0]]?.clusters?.length || 0;
+  const futureDates = dates.filter(d => d >= todayStr);
+  const numStaff = futureDates.length > 0
+    ? (schedule[futureDates[0]]?.clusters?.length || parseInt(document.getElementById('staffCount')?.value || '3'))
+    : parseInt(document.getElementById('staffCount')?.value || '3');
   const names = ['Staff A','Staff B','Staff C','Staff D','Staff E'].slice(0, numStaff);
   const dotColors = { low:'var(--green)', moderate:'var(--yellow)', high:'var(--orange)', critical:'var(--red)' };
   const riskColors = { low:'var(--green)', moderate:'#997404', high:'var(--orange)', critical:'var(--red)' };
 
   const headers = dates.map(d => {
+    const dayLabel = new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
+    if (d < todayStr) {
+      const count = measurementsData.filter(m => (m.data_collected_at||'').startsWith(d)).length;
+      return `<th>${dayLabel}<br><span style="font-size:0.73rem;font-weight:400;color:var(--muted)">Actual · ${count} visits</span></th>`;
+    }
     const r = schedule[d]?.risk;
     const dc = r ? dotColors[r.color] : '#ccc';
     const rc = r ? riskColors[r.color] : 'var(--muted)';
     const total = schedule[d]?.clusters?.reduce((s,c) => s + c.length, 0) || 0;
-    const dayLabel = new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
     return `<th>
       <span class="risk-dot" style="background:${dc};display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle;"></span>${dayLabel}
       <br><span style="font-size:0.73rem;font-weight:400;color:${rc}">${r?.level||'—'} · ${total} visits</span>
@@ -1085,6 +1105,22 @@ function renderWeekGrid(schedule, dates) {
 
   const rows = names.map((name, si) => {
     const cells = dates.map(d => {
+      if (d < todayStr) {
+        if (si > 0) return ''; // covered by rowspan on si===0
+        const dayM = measurementsData
+          .filter(m => (m.data_collected_at||'').startsWith(d))
+          .sort((a, b) => (a.pond_code||'').localeCompare(b.pond_code||''));
+        if (!dayM.length) return `<td class="week-cell empty-cell" rowspan="${numStaff}">No data</td>`;
+        const items = dayM.map(m => {
+          const doVal = m.dissolved_oxygen;
+          const oor = doVal !== null && doVal !== undefined && doVal < 3.0;
+          return `<div class="week-pond">
+            <span class="week-pond-id">${m.pond_code||'—'}</span>
+            <span class="week-pond-farmer" style="color:${oor ? 'var(--red)' : 'var(--muted)'}">DO: ${doVal ?? '—'}${oor ? ' ⚠' : ''}</span>
+          </div>`;
+        }).join('');
+        return `<td class="week-cell" rowspan="${numStaff}" style="vertical-align:top">${items}<div class="week-total">${dayM.length} measurements</div></td>`;
+      }
       const cluster = schedule[d]?.clusters?.[si] || [];
       if (!cluster.length) return `<td class="week-cell empty-cell">—</td>`;
       const ponds = cluster.map(p => `
@@ -1105,7 +1141,6 @@ function renderWeekGrid(schedule, dates) {
       </table>
     </div>`;
 
-  // Update title
   const first = new Date(dates[0]+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
   const last  = new Date(dates[dates.length-1]+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
   document.getElementById('weekViewTitle').textContent = `Week View — ${first} to ${last}`;
